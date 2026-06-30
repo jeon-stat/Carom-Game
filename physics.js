@@ -844,12 +844,12 @@ export class BilliardPhysicsManager {
 
           const contactNormalA = this._scratchD.copy(normal).multiplyScalar(this.ballRadius);
           const contactNormalB = this._scratchE.copy(normal).multiplyScalar(-this.ballRadius);
-          const vPoint = this._scratchF.copy(a.velocity)
-            .add(this._scratchA.copy(a.angularVelocity).cross(contactNormalA))
-            .sub(b.velocity)
-            .sub(this._scratchA.copy(b.angularVelocity).cross(contactNormalB));
+          const vPoint = this._scratchF.copy(b.velocity)
+            .add(this._scratchA.copy(b.angularVelocity).cross(contactNormalB))
+            .sub(a.velocity)
+            .sub(this._scratchA.copy(a.angularVelocity).cross(contactNormalA));
           const vRelNormalMag = normal.dot(vPoint);
-          if (vRelNormalMag < 0) {
+          if (vRelNormalMag <= 0) {
             continue;
           }
           const vRel = this._scratchC.copy(vPoint).sub(this._scratchB.copy(normal).multiplyScalar(vRelNormalMag));
