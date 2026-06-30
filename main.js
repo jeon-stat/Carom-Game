@@ -170,18 +170,21 @@ const ballRadius = 0.03275;
 const balls = [];
 const physicsManager = new BilliardPhysicsManager({
   ballRadius,
-  ballMass: 0.23,
+  ballMass: 0.17,
   gravity: 9.81,
   slidingFriction: 0.2,
-  rollingFriction: 0.2,
+  rollingFriction: 0.015,
   spinningFriction: 0.02,
-  ballRestitution: 0.8,
-  ballFriction: 0.2,
+  ballRestitution: 0.95,
+  ballFriction: 0.08,
   cushionRestitution: 0.8,
   cushionFriction: 0.2,
   stopVelocityThreshold: 0.01,
   stopAngularThreshold: 0.04,
+  slipToRollThreshold: 0.004,
+  pureSpinStopThreshold: 0.02,
   substepCount: 14,
+  fixedStep: 1 / 120,
   tableMinX: -table.playWidth / 2 + ballRadius,
   tableMaxX: table.playWidth / 2 - ballRadius,
   tableMinZ: -table.playHeight / 2 + ballRadius,
@@ -190,10 +193,15 @@ const physicsManager = new BilliardPhysicsManager({
   pocketRadius: 0,
   pocketCaptureSpeed: 0.08,
   pocketPositions: [],
+  cueImpulseScale: 1,
+  cueSpinScale: 1,
+  cueElevationLiftScale: 0.18,
   debugMode: false
 });
 window.physicsManager = physicsManager;
 window.billiardsBalls = balls;
+window.physicsDebugContacts = physicsManager.debugContacts;
+window.getPhysicsDebugText = () => physicsManager.getDebugText();
 
 const ballDefs = [
   { name: "cue", color: 0xf6f2de, stripeColor: 0xd43834, stripeHighlight: 0xffb2a3, stripeTilt: -0.22, position: new THREE.Vector3(-0.58, ballRadius, 0) },
@@ -931,7 +939,7 @@ function strikeCueBall(forward) {
 
   const cueBall = balls[0];
   const speed = THREE.MathUtils.clamp(state.power, 0.12, 1) * (160 * ballRadius);
-  cueBall.applyShot(state.aimDirection, speed, getCueTipOffset());
+  cueBall.applyShot(state.aimDirection, speed, getCueTipOffset(), state.cueLift);
 }
 
 function getCueTipOffset() {

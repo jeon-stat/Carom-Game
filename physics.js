@@ -94,6 +94,16 @@ export class BilliardBallPhysics {
     this._scratch = new THREE.Vector3();
   }
 
+  get inverseMass() {
+    return this.mass <= 0 ? 0 : 1 / this.mass;
+  }
+
+  get inverseInertia() {
+    return this.mass <= 0 || this.radius <= 0
+      ? 0
+      : 5 / (2 * this.mass * this.radius * this.radius);
+  }
+
   get isNearlyStopped() {
     if (this.isPocketed) {
       return true;
@@ -135,6 +145,15 @@ export class BilliardBallPhysics {
     this.syncTransform();
   }
 
+  applyImpulse(impulse) {
+    this.velocity.addScaledVector(impulse, this.inverseMass);
+  }
+
+  applyImpulseAtPoint(impulse, contactPointRelativeToCenter) {
+    this.velocity.addScaledVector(impulse, this.inverseMass);
+    this.angularVelocity.add(contactPointRelativeToCenter.clone().cross(impulse).multiplyScalar(this.inverseInertia));
+  }
+
   setPocketed(pocketed) {
     this.isPocketed = pocketed;
     this.visible = !pocketed;
@@ -174,14 +193,18 @@ export class BilliardPhysicsManager {
     gravity = 9.81,
     slidingFriction = 0.2,
     rollingFriction = 0.015,
-    spinningFriction = 0.045,
+    spinningFriction = 0.02,
+    spinDecay = null,
     ballRestitution = 0.95,
     ballFriction = 0.08,
-    cushionRestitution = 0.9,
-    cushionFriction = 0.06,
+    cushionRestitution = 0.8,
+    cushionFriction = 0.2,
     stopVelocityThreshold = 0.01,
     stopAngularThreshold = 0.03,
+    slipToRollThreshold = 0.004,
+    pureSpinStopThreshold = 0.02,
     substepCount = 12,
+    fixedStep = 1 / 120,
     tableMinX = -1.18,
     tableMaxX = 1.18,
     tableMinZ = -0.56,
@@ -190,6 +213,9 @@ export class BilliardPhysicsManager {
     pocketRadius = 0,
     pocketCaptureSpeed = 0.08,
     pocketPositions = [],
+    cueImpulseScale = 1,
+    cueSpinScale = 1,
+    cueElevationLiftScale = 0.18,
     debugMode = false
   } = {}) {
     this.ballRadius = ballRadius;
@@ -197,14 +223,18 @@ export class BilliardPhysicsManager {
     this.gravity = gravity;
     this.slidingFriction = slidingFriction;
     this.rollingFriction = rollingFriction;
-    this.spinningFriction = spinningFriction;
+    this.spinningFriction = spinDecay ?? spinningFriction;
+    this.spinDecay = this.spinningFriction;
     this.ballRestitution = ballRestitution;
     this.ballFriction = ballFriction;
     this.cushionRestitution = cushionRestitution;
     this.cushionFriction = cushionFriction;
     this.stopVelocityThreshold = stopVelocityThreshold;
     this.stopAngularThreshold = stopAngularThreshold;
+    this.slipToRollThreshold = slipToRollThreshold;
+    this.pureSpinStopThreshold = pureSpinStopThreshold;
     this.substepCount = Math.max(1, Math.floor(substepCount));
+    this.fixedStep = fixedStep;
     this.tableMinX = tableMinX;
     this.tableMaxX = tableMaxX;
     this.tableMinZ = tableMinZ;
@@ -213,10 +243,15 @@ export class BilliardPhysicsManager {
     this.pocketRadius = pocketRadius;
     this.pocketCaptureSpeed = pocketCaptureSpeed;
     this.pocketPositions = pocketPositions.map(createVector3);
+    this.cueImpulseScale = cueImpulseScale;
+    this.cueSpinScale = cueSpinScale;
+    this.cueElevationLiftScale = cueElevationLiftScale;
     this.debugMode = debugMode;
     this.sinTheta = 2 / 5;
     this.cosTheta = Math.sqrt(21) / 5;
     this.throwFactor = 1;
+    this.accumulator = 0;
+    this.debugContacts = [];
     this.refreshDerivedPhysics();
     this.balls = [];
     this._scratchA = new THREE.Vector3();
@@ -234,7 +269,7 @@ export class BilliardPhysicsManager {
     this.Mz = ((this.rollingFriction * this.ballMass * this.gravity * 2) / 3) * this.spinningFriction;
     this.Mxy = (7 / (5 * Math.SQRT2)) * this.ballRadius * this.slidingFriction * this.ballMass * this.gravity;
     this.slideAngularAccel = (5 * this.slidingFriction * this.gravity) / (2 * this.ballRadius);
-    this.spinAngularDecel = (5 * this.spinningFriction * this.gravity) / (2 * this.ballRadius);
+    this.spinAngularDecel = this.spinningFriction * this.gravity;
   }
 
   registerBall(ball) {
@@ -272,47 +307,74 @@ export class BilliardPhysicsManager {
     const tipOffset = cueTipOffset instanceof THREE.Vector2
       ? cueTipOffset.clone()
       : new THREE.Vector2(cueTipOffset?.x ?? 0, cueTipOffset?.y ?? 0);
-    const angle = Math.atan2(direction.z, direction.x);
-    const strike = this.cueStrike(angle, power, tipOffset, elevation);
+    const strike = this.cueStrike(direction, power, tipOffset, elevation);
 
-    ball.velocity.copy(strike.vel);
-    ball.velocity.y = 0;
-    ball.angularVelocity.copy(strike.rvel);
+    ball.velocity.set(0, 0, 0);
+    ball.angularVelocity.set(0, 0, 0);
+    ball.applyImpulseAtPoint(strike.linearImpulse, strike.contactOffset);
+    this.recordDebugContact(
+      ball.position.clone().add(strike.contactOffset),
+      strike.contactOffset.clone().normalize(),
+      strike.linearImpulse,
+      "cue",
+      0xff5555
+    );
 
     ball.state = BallState.Sliding;
     ball.setPocketed(false);
     ball.syncTransform();
   }
 
-  cueStrike(angle, power, offset, elevation = 0) {
+  cueStrike(direction, power, offset, elevation = 0) {
+    const shotDirection = createVector3(direction);
+    shotDirection.y = 0;
+    if (shotDirection.lengthSq() < EPSILON) {
+      shotDirection.set(1, 0, 0);
+    }
+    shotDirection.normalize();
+
+    const right = this._scratchA.copy(shotDirection).cross(UP).multiplyScalar(-1);
+    if (right.lengthSq() < EPSILON) {
+      right.set(0, 0, 1);
+    } else {
+      right.normalize();
+    }
+
     const speed = clamp(power, 0, 160 * this.ballRadius);
-    const vel = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)).multiplyScalar(speed);
-    const rvel = this.cueToSpin(offset, vel, elevation);
-    return { vel, rvel };
+    const impulseMagnitude = speed * this.ballMass * this.cueImpulseScale;
+    const linearImpulse = shotDirection.clone().multiplyScalar(impulseMagnitude);
+    const contactOffset = shotDirection.clone().multiplyScalar(-this.ballRadius)
+      .add(right.multiplyScalar(clamp(offset.x, -1, 1) * this.ballRadius * this.cueSpinScale))
+      .add(UP.clone().multiplyScalar(clamp(offset.y, -1, 1) * this.ballRadius * this.cueSpinScale))
+      .add(UP.clone().multiplyScalar(clamp(elevation, 0, 1) * this.ballRadius * this.cueElevationLiftScale));
+
+    if (elevation > 0) {
+      linearImpulse.addScaledVector(UP, impulseMagnitude * elevation * this.cueElevationLiftScale);
+    }
+
+    return {
+      linearImpulse,
+      contactOffset,
+      vel: linearImpulse.clone(),
+      rvel: this.cueToSpin(offset, linearImpulse.clone().multiplyScalar(1 / Math.max(this.ballMass, EPSILON)), elevation)
+    };
   }
 
   cueToSpin(offset, v, elevation = 0) {
     const tip = offset instanceof THREE.Vector2
       ? offset
       : new THREE.Vector2(offset?.x ?? 0, offset?.y ?? 0);
-    const planarSpeed = Math.max(this.getPlanarSpeed(v), 0.001);
+    const planarSpeed = Math.max(this.getPlanarSpeed(v), EPSILON);
     const dir = this._scratchA.copy(v).setY(0).normalize();
-    const rollAxis = upCross(dir, this._scratchB);
-
+    const right = this._scratchB.set(dir.z, 0, -dir.x);
     const follow = clamp(tip.y, -1, 1);
     const side = clamp(tip.x, -1, 1);
     const spinScale = planarSpeed / this.ballRadius;
 
-    // Center hits start with almost no forward roll, so the ball first slides
-    // and cloth friction gradually converts linear speed into rolling.
-    const rollSpin = rollAxis.multiplyScalar(spinScale * follow * 1.6);
-    const sideSpin = side * spinScale * 1.15;
-    const masseLift = clamp(elevation, 0, 0.75) * spinScale * 0.18;
-
     return new THREE.Vector3(
-      rollSpin.x,
-      sideSpin + masseLift,
-      rollSpin.z
+      right.x * follow * spinScale * 1.6,
+      side * spinScale * 1.15,
+      right.z * follow * spinScale * 1.6
     );
   }
 
@@ -321,33 +383,44 @@ export class BilliardPhysicsManager {
       return;
     }
 
-    const steps = Math.max(1, this.substepCount);
-    const stepDt = dt / steps;
+    this.debugContacts.length = 0;
+    this.accumulator += dt;
+    const maxAccumulation = this.fixedStep * this.substepCount * 8;
+    if (this.accumulator > maxAccumulation) {
+      this.accumulator = maxAccumulation;
+    }
 
-    for (let step = 0; step < steps; step += 1) {
-      for (const ball of this.balls) {
-        if (!ball || ball.isPocketed) {
-          continue;
+    while (this.accumulator >= this.fixedStep) {
+      const steps = Math.max(1, this.substepCount);
+      const stepDt = this.fixedStep / steps;
+
+      for (let step = 0; step < steps; step += 1) {
+        for (const ball of this.balls) {
+          if (!ball || ball.isPocketed) {
+            continue;
+          }
+
+          this.updateState(ball);
+          this.integrateBall(ball, stepDt);
         }
 
-        this.updateState(ball);
-        this.integrateBall(ball, stepDt);
-      }
+        this.resolveCushions();
+        this.resolveBallCollisions();
+        this.resolvePockets();
 
-      this.resolveCushions();
-      this.resolveBallCollisions();
-      this.resolvePockets();
+        for (const ball of this.balls) {
+          if (!ball || ball.isPocketed) {
+            continue;
+          }
 
-      for (const ball of this.balls) {
-        if (!ball || ball.isPocketed) {
-          continue;
+          this.updateState(ball);
+          this.snapToRest(ball);
+          ball.syncTransform();
+          ball.updateVisualSpin(stepDt);
         }
-
-        this.updateState(ball);
-        this.snapToRest(ball);
-        ball.syncTransform();
-        ball.updateVisualSpin(stepDt);
       }
+
+      this.accumulator -= this.fixedStep;
     }
 
     this.emitDebugLog();
@@ -385,23 +458,18 @@ export class BilliardPhysicsManager {
   updateState(ball) {
     const planarSpeed = this.getPlanarSpeed(ball.velocity);
     const spinSpeed = Math.abs(ball.angularVelocity.y);
+    const angularXZ = Math.hypot(ball.angularVelocity.x, ball.angularVelocity.z);
     const slipSpeed = this.getBottomSlipVector(ball, this._scratchA).length();
 
     if (planarSpeed < this.stopVelocityThreshold
       && spinSpeed < this.stopAngularThreshold
-      && slipSpeed < this.stopVelocityThreshold * 0.5) {
+      && angularXZ < this.stopAngularThreshold
+      && slipSpeed < this.slipToRollThreshold) {
       zeroBallMotion(ball);
       return;
     }
 
-    if (planarSpeed < this.stopVelocityThreshold * 0.75
-      && spinSpeed >= this.stopAngularThreshold
-      && slipSpeed < this.stopVelocityThreshold * 0.5) {
-      ball.state = BallState.Spinning;
-      return;
-    }
-
-    if (slipSpeed > this.stopVelocityThreshold * 0.5) {
+    if (slipSpeed >= this.slipToRollThreshold) {
       ball.state = BallState.Sliding;
       return;
     }
@@ -411,10 +479,13 @@ export class BilliardPhysicsManager {
       return;
     }
 
-    ball.state = spinSpeed >= this.stopAngularThreshold ? BallState.Spinning : BallState.Stationary;
-    if (ball.state === BallState.Stationary) {
-      zeroBallMotion(ball);
+    if (spinSpeed >= this.stopAngularThreshold) {
+      ball.state = BallState.Spinning;
+      return;
     }
+
+    ball.state = BallState.Stationary;
+    zeroBallMotion(ball);
   }
 
   integrateBall(ball, dt) {
@@ -443,14 +514,15 @@ export class BilliardPhysicsManager {
   }
 
   integrateSpinning(ball, dt) {
-    ball.velocity.x = moveTowards(ball.velocity.x, 0, this.rollingFriction * this.gravity * 0.05 * dt);
-    ball.velocity.z = moveTowards(ball.velocity.z, 0, this.rollingFriction * this.gravity * 0.05 * dt);
-    ball.angularVelocity.x = moveTowards(ball.angularVelocity.x, 0, this.spinAngularDecel * 0.75 * dt);
-    ball.angularVelocity.z = moveTowards(ball.angularVelocity.z, 0, this.spinAngularDecel * 0.75 * dt);
-    ball.angularVelocity.y = moveTowards(ball.angularVelocity.y, 0, this.spinAngularDecel * 3.6 * dt);
+    const decay = this.spinningFriction * this.gravity * dt;
+    ball.velocity.x = moveTowards(ball.velocity.x, 0, decay * 0.05);
+    ball.velocity.z = moveTowards(ball.velocity.z, 0, decay * 0.05);
+    ball.angularVelocity.x = moveTowards(ball.angularVelocity.x, 0, decay * 0.75);
+    ball.angularVelocity.z = moveTowards(ball.angularVelocity.z, 0, decay * 0.75);
+    ball.angularVelocity.y = moveTowards(ball.angularVelocity.y, 0, decay * 1.5);
 
-    if (this.getPlanarSpeed(ball.velocity) < this.stopVelocityThreshold * 0.6
-      && Math.abs(ball.angularVelocity.y) < this.stopAngularThreshold * 10) {
+    if (this.getPlanarSpeed(ball.velocity) < this.stopVelocityThreshold * 0.2
+      && Math.abs(ball.angularVelocity.y) < this.pureSpinStopThreshold) {
       zeroBallMotion(ball);
     }
   }
@@ -473,7 +545,7 @@ export class BilliardPhysicsManager {
     }
 
     this.forceRoll(ball.velocity, ball.angularVelocity);
-    ball.angularVelocity.y = moveTowards(ball.angularVelocity.y, 0, this.spinAngularDecel * 1.15 * dt);
+    ball.angularVelocity.y = moveTowards(ball.angularVelocity.y, 0, this.spinningFriction * this.gravity * dt);
   }
 
   integrateSliding(ball, dt) {
@@ -485,15 +557,17 @@ export class BilliardPhysicsManager {
       const linearStep = this.slidingFriction * this.gravity * dt;
       ball.velocity.addScaledVector(slipDir, -linearStep);
 
-      ball.angularVelocity.x += this.slideAngularAccel * slipDir.z * dt;
-      ball.angularVelocity.z -= this.slideAngularAccel * slipDir.x * dt;
+      const spinAccel = (5 / 2) * (this.slidingFriction * this.gravity) / this.ballRadius;
+      ball.angularVelocity.x += spinAccel * slipDir.z * dt;
+      ball.angularVelocity.z -= spinAccel * slipDir.x * dt;
     }
 
-    ball.angularVelocity.y = moveTowards(ball.angularVelocity.y, 0, this.spinAngularDecel * 0.85 * dt);
+    ball.angularVelocity.y = moveTowards(ball.angularVelocity.y, 0, this.spinningFriction * this.gravity * dt);
 
     const newSlip = this.getBottomSlipVector(ball, this._scratchB).length();
-    if (newSlip < this.stopVelocityThreshold * 0.4) {
+    if (newSlip < this.slipToRollThreshold) {
       this.forceRoll(ball.velocity, ball.angularVelocity);
+      ball.state = BallState.Rolling;
     }
 
     if (this.getPlanarSpeed(ball.velocity) < this.stopVelocityThreshold * 1.2
@@ -607,18 +681,25 @@ export class BilliardPhysicsManager {
   applyCushionResponse(ball, normal) {
     const n = normal.clone().normalize();
     const t = new THREE.Vector3(-n.z, 0, n.x);
-    const vn = ball.velocity.dot(n);
+    const contactOffset = this._scratchA.copy(n).multiplyScalar(-ball.radius);
+    const contactVelocity = this._scratchB.copy(ball.velocity).add(this._scratchC.copy(ball.angularVelocity).cross(contactOffset));
+    const vn = contactVelocity.dot(n);
     if (vn >= 0) {
       return;
     }
 
-    const vt = ball.velocity.dot(t);
-    ball.velocity.addScaledVector(n, -(1 + this.cushionRestitution) * vn);
-    ball.velocity.addScaledVector(t, -this.cushionFriction * vt);
-    const tangentialContactSpeed = vt - ball.angularVelocity.y * this.ballRadius;
-    ball.angularVelocity.y += (tangentialContactSpeed / Math.max(this.ballRadius, EPSILON)) * 0.14;
-    this.forceRoll(ball.velocity, ball.angularVelocity);
-    ball.angularVelocity.y *= 0.92;
+    const tangentVelocity = contactVelocity.clone().sub(n.clone().multiplyScalar(vn));
+    const tangentSpeed = tangentVelocity.length();
+    const tangentDir = tangentSpeed > EPSILON ? tangentVelocity.clone().multiplyScalar(1 / tangentSpeed) : t;
+    const normalImpulseMag = -(1 + this.cushionRestitution) * vn / Math.max(ball.inverseMass, EPSILON);
+    const tangentialLimit = Math.abs(normalImpulseMag) * this.cushionFriction;
+    const tangentialImpulseMag = Math.min(tangentSpeed / Math.max(ball.inverseMass, EPSILON), tangentialLimit);
+    const impulse = n.clone().multiplyScalar(normalImpulseMag)
+      .addScaledVector(tangentDir, -tangentialImpulseMag);
+
+    ball.applyImpulseAtPoint(impulse, contactOffset);
+    ball.state = BallState.Sliding;
+    this.recordDebugContact(ball.position.clone().add(contactOffset), n, impulse, "cushion", 0x66ff66);
   }
 
   bounceHanBlend(v, w) {
@@ -771,7 +852,7 @@ export class BilliardPhysicsManager {
           if (vRelNormalMag < 0) {
             continue;
           }
-          const vRel = this._scratchC.copy(vPoint).sub(normal.clone().multiplyScalar(vRelNormalMag));
+          const vRel = this._scratchC.copy(vPoint).sub(this._scratchB.copy(normal).multiplyScalar(vRelNormalMag));
           const tangent = this._scratchA.set(-normal.z, 0, normal.x);
           const vRelTangentialMag = vRel.dot(tangent);
           const invMassSum = (1 / a.mass) + (1 / b.mass);
@@ -786,16 +867,11 @@ export class BilliardPhysicsManager {
           const impulse = this._scratchE.copy(normal).multiplyScalar(normalForce)
             .addScaledVector(tangent, tangentImpulse);
 
-          a.velocity.addScaledVector(impulse, 1 / a.mass);
-          b.velocity.addScaledVector(impulse, -1 / b.mass);
-          const contactRadiusA = this._scratchD.copy(normal).multiplyScalar(a.radius);
-          const contactRadiusB = this._scratchF.copy(normal).multiplyScalar(-b.radius);
-          a.angularVelocity.add(contactRadiusA.clone().cross(impulse).multiplyScalar(1 / this.I));
-          b.angularVelocity.add(contactRadiusB.clone().cross(impulse.clone().multiplyScalar(-1)).multiplyScalar(1 / this.I));
-          a.angularVelocity.y *= 0.985;
-          b.angularVelocity.y *= 0.985;
+          a.applyImpulseAtPoint(impulse.clone().multiplyScalar(-1), contactNormalA);
+          b.applyImpulseAtPoint(impulse, contactNormalB);
           a.state = BallState.Sliding;
           b.state = BallState.Sliding;
+          this.recordDebugContact(a.position.clone().add(contactNormalA), normal, impulse, "ball", 0x66ccff);
 
           if (this.debugMode) {
             a._lastCollision = "ball";
@@ -836,6 +912,7 @@ export class BilliardPhysicsManager {
         ball.angularVelocity.set(0, 0, 0);
         ball.position.copy(pocket);
         ball.syncTransform();
+        this.recordDebugContact(pocket.clone(), new THREE.Vector3(0, 1, 0), new THREE.Vector3(), "pocket", 0xff66ff);
         break;
       }
     }
@@ -859,7 +936,7 @@ export class BilliardPhysicsManager {
     if (planarSpeed < this.stopVelocityThreshold
       && spinSpeed < this.stopAngularThreshold
       && angularXZ < this.stopAngularThreshold
-      && slipSpeed < this.stopVelocityThreshold * 0.4) {
+      && slipSpeed < this.slipToRollThreshold) {
       zeroBallMotion(ball);
       return;
     }
@@ -867,7 +944,7 @@ export class BilliardPhysicsManager {
     if (planarSpeed < this.stopVelocityThreshold * 0.8
       && angularXZ < spinSnapThreshold
       && spinSpeed < spinSnapThreshold
-      && slipSpeed < this.stopVelocityThreshold * 0.8) {
+      && slipSpeed < this.slipToRollThreshold * 1.5) {
       zeroBallMotion(ball);
       return;
     }
@@ -899,7 +976,7 @@ export class BilliardPhysicsManager {
   }
 
   getSpinDeceleration() {
-    return (5 * this.spinningFriction * this.gravity) / 2;
+    return this.spinAngularDecel;
   }
 
   emitDebugLog() {
@@ -929,5 +1006,15 @@ export class BilliardPhysicsManager {
       const angular = ball.angularVelocity.toArray().map((value) => value.toFixed(2)).join(", ");
       return `${ball.name || ball.id}: ${ball.state} v=[${velocity}] w=[${angular}] pocketed=${ball.isPocketed}`;
     }).join("\n");
+  }
+
+  recordDebugContact(point, normal, impulse, type, color) {
+    this.debugContacts.push({
+      point: point.clone ? point.clone() : createVector3(point),
+      normal: normal.clone ? normal.clone() : createVector3(normal),
+      impulse: impulse.clone ? impulse.clone() : createVector3(impulse),
+      type,
+      color
+    });
   }
 }
