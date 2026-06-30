@@ -174,7 +174,7 @@ const physicsManager = new BilliardPhysicsManager({
   gravity: 9.81,
   slidingFriction: 0.2,
   rollingFriction: 0.2,
-  spinningFriction: 0.0,
+  spinningFriction: 0.02,
   ballRestitution: 0.8,
   ballFriction: 0.2,
   cushionRestitution: 0.8,

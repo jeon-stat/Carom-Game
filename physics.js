@@ -744,32 +744,36 @@ export class BilliardPhysicsManager {
             continue;
           }
 
+          const normal = this._scratchB;
           if (distance < EPSILON) {
-            const relative = this._scratchB.copy(b.velocity).sub(a.velocity);
+            const relative = this._scratchC.copy(b.velocity).sub(a.velocity);
             if (relative.lengthSq() > EPSILON) {
-              delta.copy(relative).normalize();
+              normal.copy(relative).normalize();
             } else {
-              delta.set(1, 0, 0);
+              normal.set(1, 0, 0);
             }
-            distance = EPSILON;
+          } else {
+            normal.copy(delta).divideScalar(distance);
           }
 
-          const normal = delta.multiplyScalar(1 / distance);
           const overlap = minDistance - distance;
           const correction = overlap * 0.5 + 1e-4;
           a.position.addScaledVector(normal, -correction);
           b.position.addScaledVector(normal, correction);
 
-          const ab = this._scratchB.copy(normal);
-          const vPoint = this._scratchC.copy(a.velocity).sub(b.velocity)
-            .add(ab.clone().multiplyScalar(-this.ballRadius).cross(a.angularVelocity))
-            .sub(ab.clone().multiplyScalar(this.ballRadius).cross(b.angularVelocity));
-          const vRelNormalMag = ab.dot(vPoint);
+          const contactNormalA = this._scratchD.copy(normal).multiplyScalar(this.ballRadius);
+          const contactNormalB = this._scratchE.copy(normal).multiplyScalar(-this.ballRadius);
+          const vPoint = this._scratchF.copy(a.velocity)
+            .add(this._scratchA.copy(a.angularVelocity).cross(contactNormalA))
+            .sub(b.velocity)
+            .sub(this._scratchA.copy(b.angularVelocity).cross(contactNormalB));
+          const vRelNormalMag = normal.dot(vPoint);
           if (vRelNormalMag < 0) {
             continue;
           }
-          const vRel = this._scratchD.copy(vPoint).sub(ab.clone().multiplyScalar(vRelNormalMag));
-          const vRelTangentialMag = vRel.dot(new THREE.Vector3(-ab.z, 0, ab.x));
+          const vRel = this._scratchC.copy(vPoint).sub(normal.clone().multiplyScalar(vRelNormalMag));
+          const tangent = this._scratchA.set(-normal.z, 0, normal.x);
+          const vRelTangentialMag = vRel.dot(tangent);
           const invMassSum = (1 / a.mass) + (1 / b.mass);
           const normalForce = -(1 + this.ballRestitution) * vRelNormalMag / invMassSum;
           const dynamicFriction = 0.01 + 0.108 * Math.exp(-1.088 * Math.abs(vRelTangentialMag));
@@ -779,13 +783,13 @@ export class BilliardPhysicsManager {
             -(Math.abs(normalForce) * friction),
             Math.abs(normalForce) * friction
           );
-          const impulse = this._scratchE.copy(ab).multiplyScalar(normalForce)
-            .addScaledVector(new THREE.Vector3(-ab.z, 0, ab.x), tangentImpulse);
+          const impulse = this._scratchE.copy(normal).multiplyScalar(normalForce)
+            .addScaledVector(tangent, tangentImpulse);
 
           a.velocity.addScaledVector(impulse, 1 / a.mass);
           b.velocity.addScaledVector(impulse, -1 / b.mass);
-          const contactRadiusA = this._scratchF.copy(ab).multiplyScalar(a.radius);
-          const contactRadiusB = ab.clone().multiplyScalar(-b.radius);
+          const contactRadiusA = this._scratchD.copy(normal).multiplyScalar(a.radius);
+          const contactRadiusB = this._scratchF.copy(normal).multiplyScalar(-b.radius);
           a.angularVelocity.add(contactRadiusA.clone().cross(impulse).multiplyScalar(1 / this.I));
           b.angularVelocity.add(contactRadiusB.clone().cross(impulse.clone().multiplyScalar(-1)).multiplyScalar(1 / this.I));
           a.angularVelocity.y *= 0.985;
