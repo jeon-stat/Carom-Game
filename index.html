@@ -1,102 +1,80 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Carom Game | pooltool-backed prototype</title>
     <meta
-      name="description"
-      content="A Unity frontend with Python pooltool as the physics backend. GitHub Pages shows the architecture and prototype links."
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
     >
+    <title>Web Carom Prototype</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="./styles.css">
   </head>
   <body>
-    <main class="page-shell">
-      <section class="hero">
-        <div class="hero-copy">
-          <p class="eyebrow">GitHub Pages preview</p>
-          <h1>Carom Game now points at a pooltool-backed workflow.</h1>
-          <p class="lede">
-            Unity is the frontend for input, camera, and playback.
-            Python <span class="accent">pooltool</span> is the physics backend.
-            This page is the public face of that split architecture.
-          </p>
+    <div id="app">
+      <canvas id="scene"></canvas>
 
-          <div class="cta-row">
-            <a class="button button-primary" href="./UnityPort/README.md">Open Unity Port</a>
-            <a class="button button-secondary" href="./UnityPort/PythonBackend/README.md">Open Python Backend</a>
-          </div>
-
-          <p class="note">
-            GitHub Pages is static, so the live physics does not execute here.
-            The playable simulation runs locally from Unity through the Python adapter.
-          </p>
+      <div class="hud top">
+        <div class="brand">
+          <strong>4구 웹 프로토타입</strong>
+          <span id="statusText">각도와 회전을 조절한 뒤 샷</span>
+          <span id="buildStamp" class="build-stamp">Updated __BUILD_STAMP__</span>
         </div>
+        <button id="resetButton" class="hud-button">재시작</button>
+      </div>
 
-        <aside class="status-card">
-          <div class="status-top">
-            <span class="pill live">pooltool architecture</span>
-            <span class="pill muted">static preview</span>
+      <div class="hud center">
+        <div class="crosshair"></div>
+      </div>
+
+      <div class="floating-actions">
+        <button id="controlsToggle" class="hud-button compact">조작</button>
+        <button id="viewToggle" class="hud-button compact">CUE</button>
+        <button id="zoomOutButton" class="hud-button compact" aria-label="줌 아웃">−</button>
+        <button id="zoomInButton" class="hud-button compact" aria-label="줌 인">+</button>
+        <button id="shootButton" class="shoot-fab">샷</button>
+      </div>
+
+      <div id="controlsDrawer" class="controls-drawer" data-open="false">
+        <div class="controls-handle">
+          <span>터치 조작</span>
+          <span class="handle-hint">위로 올리기 / 내리기</span>
+        </div>
+        <div class="controls-grid">
+          <div class="panel left">
+            <div class="panel-title">시점 / 조준</div>
+            <div id="aimPad" class="touch-pad">
+              <div class="touch-label">드래그해서 시점 이동</div>
+              <div id="aimThumb" class="thumb"></div>
+            </div>
           </div>
 
-          <div class="status-stack">
-            <div class="status-item">
-              <span class="label">Frontend</span>
-              <strong>Unity rendering, aim, replay</strong>
+          <div class="panel middle">
+            <div class="panel-title">타점</div>
+            <div id="spinPad" class="spin-pad">
+              <div class="spin-ring"></div>
+              <div id="spinThumb" class="spin-thumb"></div>
             </div>
-            <div class="status-item">
-              <span class="label">Backend</span>
-              <strong>Python pooltool simulation</strong>
-            </div>
-            <div class="status-item">
-              <span class="label">Exchange</span>
-              <strong>ShotRequest JSON -> Trajectory JSON</strong>
+            <div class="spin-readout">
+              <span>X <strong id="spinXValue">0.00</strong></span>
+              <span>Y <strong id="spinYValue">0.00</strong></span>
             </div>
           </div>
-        </aside>
-      </section>
 
-      <section class="grid-section">
-        <article class="panel feature">
-          <p class="section-label">What changed</p>
-          <h2>Physics moved out of the browser and into pooltool.</h2>
-          <p>
-            The repository now contains a Unity bridge and a Python adapter that can
-            drive pooltool as the authoritative physics engine.
-          </p>
-        </article>
-
-        <article class="panel feature">
-          <p class="section-label">How it flows</p>
-          <div class="flow">
-            <div class="flow-node">Unity AimingController</div>
-            <div class="flow-arrow">-></div>
-            <div class="flow-node">ShotRequest JSON</div>
-            <div class="flow-arrow">-></div>
-            <div class="flow-node">Python pooltool adapter</div>
-            <div class="flow-arrow">-></div>
-            <div class="flow-node">Trajectory JSON replay</div>
+          <div class="panel right">
+            <div class="panel-title">세기</div>
+            <div class="power-wrap">
+              <input id="powerSlider" class="power-slider" type="range" min="0.12" max="1" step="0.01" value="0.45">
+              <div class="power-readout">
+                세기 <strong id="powerValue">45%</strong>
+              </div>
+            </div>
+            <div class="drawer-tip">오른쪽 드래그로도 세기 조절 가능</div>
           </div>
-        </article>
+        </div>
+      </div>
+    </div>
 
-        <article class="panel feature">
-          <p class="section-label">Docs</p>
-          <ul class="doc-links">
-            <li><a href="./UnityPort/README.md">UnityPort README</a></li>
-            <li><a href="./UnityPort/PythonBackend/README.md">Python backend README</a></li>
-            <li><a href="./UnityPort/THIRD_PARTY_NOTICES.md">Third-party notices</a></li>
-          </ul>
-        </article>
-
-        <article class="panel feature">
-          <p class="section-label">Reality check</p>
-          <p>
-            If you want the actual pooltool simulation, run the Unity project locally.
-            GitHub Pages only shows the architecture and documentation.
-          </p>
-        </article>
-      </section>
-    </main>
+    <script type="module" src="./main.js"></script>
   </body>
 </html>
