@@ -28,6 +28,20 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
+      - name: Stamp build time
+        run: |
+          export BUILD_STAMP="$(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M:%S %z')"
+          python - <<'PY'
+          from pathlib import Path
+          import os
+
+          path = Path("index.html")
+          stamp = os.environ["BUILD_STAMP"]
+          text = path.read_text(encoding="utf-8")
+          text = text.replace("__BUILD_STAMP__", stamp)
+          path.write_text(text, encoding="utf-8")
+          PY
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
