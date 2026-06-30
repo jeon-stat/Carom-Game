@@ -8,6 +8,8 @@ const controlsDrawer = document.getElementById("controlsDrawer");
 const controlsToggle = document.getElementById("controlsToggle");
 const controlsHandle = controlsDrawer.querySelector(".controls-handle");
 const viewToggle = document.getElementById("viewToggle");
+const zoomOutButton = document.getElementById("zoomOutButton");
+const zoomInButton = document.getElementById("zoomInButton");
 const shootButton = document.getElementById("shootButton");
 const powerSlider = document.getElementById("powerSlider");
 const powerValue = document.getElementById("powerValue");
@@ -158,6 +160,11 @@ const cueCameraBackDistance = 2.35;
 const cueCameraHeight = 0.64;
 const cueCameraSideOffset = 0;
 const cueCameraLookAhead = 0.95;
+const cueDistanceMin = 1.25;
+const cueDistanceMax = 3.6;
+const eyeDistanceMin = 1.85;
+const eyeDistanceMax = 6.25;
+const eyeDistanceStep = 0.24;
 
 const ballRadius = 0.03275;
 const balls = [];
@@ -205,6 +212,7 @@ const state = {
   eyeYaw: 1.05,
   eyePitch: 0.35,
   eyeDistance: 3.6,
+  cueCameraDistance: cueCameraBackDistance,
   cueLift: 0.08,
   cuePull: 0.21,
   power: Number(powerSlider.value),
@@ -245,11 +253,14 @@ powerSlider.addEventListener("input", () => {
 
 resetButton.addEventListener("click", resetBalls);
 viewToggle.addEventListener("click", toggleViewMode);
+zoomOutButton.addEventListener("click", () => adjustEyeDistance(eyeDistanceStep));
+zoomInButton.addEventListener("click", () => adjustEyeDistance(-eyeDistanceStep));
 shootButton.addEventListener("click", handleShootInput);
 shootButton.addEventListener("pointerup", handleShootInput);
 shootButton.addEventListener("touchend", handleShootInput, { passive: false });
 controlsToggle.addEventListener("click", () => setControlsOpen(controlsDrawer.dataset.open !== "true"));
 controlsHandle.addEventListener("click", () => setControlsOpen(controlsDrawer.dataset.open !== "true"));
+canvas.addEventListener("wheel", handleCanvasWheel, { passive: false });
 window.addEventListener("keydown", (event) => {
   if (event.key === "Tab") {
     event.preventDefault();
@@ -470,7 +481,9 @@ function resetBalls() {
   state.eyeYaw = 1.05;
   state.eyePitch = 0.35;
   state.eyeDistance = 3.6;
+  state.cueCameraDistance = cueCameraBackDistance;
   syncViewToggle();
+  syncModeControls();
   syncSpinThumb();
   physicsManager.resetBalls();
   for (const ball of balls) {
@@ -481,6 +494,7 @@ function resetBalls() {
 function toggleViewMode() {
   state.viewMode = state.viewMode === "cue" ? "eye" : "cue";
   syncViewToggle();
+  syncModeControls();
 }
 
 function syncViewToggle() {
@@ -489,6 +503,59 @@ function syncViewToggle() {
   }
 
   viewToggle.textContent = state.viewMode === "cue" ? "CUE" : "EYE";
+}
+
+function syncModeControls() {
+  const eyeMode = state.viewMode === "eye";
+  const shotEnabled = state.viewMode === "cue" && !state.cueStrikeActive && !areBallsMoving();
+
+  if (shootButton) {
+    shootButton.disabled = !shotEnabled;
+    shootButton.classList.toggle("is-disabled", !shotEnabled);
+    shootButton.setAttribute("aria-disabled", String(!shotEnabled));
+  }
+
+  if (zoomOutButton) {
+    zoomOutButton.disabled = !eyeMode;
+    zoomOutButton.classList.toggle("is-disabled", !eyeMode);
+    zoomOutButton.setAttribute("aria-disabled", String(!eyeMode));
+  }
+
+  if (zoomInButton) {
+    zoomInButton.disabled = !eyeMode;
+    zoomInButton.classList.toggle("is-disabled", !eyeMode);
+    zoomInButton.setAttribute("aria-disabled", String(!eyeMode));
+  }
+}
+
+function adjustEyeDistance(delta) {
+  if (state.viewMode !== "eye") {
+    return;
+  }
+
+  state.eyeDistance = THREE.MathUtils.clamp(state.eyeDistance + delta, eyeDistanceMin, eyeDistanceMax);
+}
+
+function adjustCueDistance(delta) {
+  if (state.viewMode !== "cue") {
+    return;
+  }
+
+  state.cueCameraDistance = THREE.MathUtils.clamp(state.cueCameraDistance + delta, cueDistanceMin, cueDistanceMax);
+}
+
+function handleCanvasWheel(event) {
+  if (state.viewMode !== "eye") {
+    return;
+  }
+
+  event.preventDefault();
+  const direction = Math.sign(event.deltaY);
+  if (direction === 0) {
+    return;
+  }
+
+  adjustEyeDistance(direction > 0 ? eyeDistanceStep : -eyeDistanceStep);
 }
 
 function setupAimPad() {
@@ -523,7 +590,7 @@ function updateAimFromPointer(event) {
   const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   const y = ((event.clientY - rect.top) / rect.height) * 2 - 1;
   state.yaw -= x * 0.03;
-  state.pitch = THREE.MathUtils.clamp(state.pitch + y * 0.012, -1.15, 0.55);
+  state.pitch = THREE.MathUtils.clamp(state.pitch - y * 0.012, -1.15, 0.55);
   state.cueLift = THREE.MathUtils.clamp((state.pitch + 0.05) * 0.45, 0.015, 0.26);
   aimThumb.style.left = `${THREE.MathUtils.clamp((x * 0.35 + 0.5) * 100, 15, 85)}%`;
   aimThumb.style.top = `${THREE.MathUtils.clamp((y * 0.35 + 0.5) * 100, 15, 85)}%`;
@@ -580,7 +647,7 @@ function syncSpinThumb() {
 }
 
 function shootCueBall() {
-  if (state.shotInFlight || state.cueStrikeActive || areBallsMoving()) {
+  if (state.viewMode !== "cue" || state.shotInFlight || state.cueStrikeActive || areBallsMoving()) {
     return;
   }
   state.cameraFrozen = true;
@@ -604,6 +671,21 @@ function handleShootInput(event) {
 function setupCanvasGestures() {
   const activePointers = new Map();
   let primaryPointerId = null;
+  let pinchStartDistance = 0;
+  let pinchStartEyeDistance = state.eyeDistance;
+  let pinchStartCueDistance = state.cueCameraDistance;
+
+  const getPinchDistance = () => {
+    const pointers = [...activePointers.values()];
+    if (pointers.length < 2) {
+      return 0;
+    }
+
+    return Math.hypot(
+      pointers[0].x - pointers[1].x,
+      pointers[0].y - pointers[1].y
+    );
+  };
 
   canvas.addEventListener("pointerdown", (event) => {
     if (event.pointerType === "mouse" && event.button !== 0) {
@@ -629,6 +711,12 @@ function setupCanvasGestures() {
       state.canvasGestureMoved = false;
     }
 
+    if (activePointers.size === 2) {
+      pinchStartDistance = getPinchDistance();
+      pinchStartEyeDistance = state.eyeDistance;
+      pinchStartCueDistance = state.cueCameraDistance;
+    }
+
     canvas.setPointerCapture(event.pointerId);
   });
 
@@ -641,24 +729,26 @@ function setupCanvasGestures() {
     pointer.y = event.clientY;
 
     if (activePointers.size >= 2) {
-      if (state.viewMode !== "cue") {
+      const pinchDistance = getPinchDistance();
+      if (pinchStartDistance <= 0 || pinchDistance <= 0) {
         return;
       }
-      let sumX = 0;
-      let sumY = 0;
-      for (const item of activePointers.values()) {
-        sumX += item.x;
-        sumY += item.y;
+
+      const zoomRatio = pinchStartDistance / pinchDistance;
+      if (state.viewMode === "cue") {
+        state.cueCameraDistance = THREE.MathUtils.clamp(
+          pinchStartCueDistance * zoomRatio,
+          cueDistanceMin,
+          cueDistanceMax
+        );
+      } else {
+        state.eyeDistance = THREE.MathUtils.clamp(
+          pinchStartEyeDistance * zoomRatio,
+          eyeDistanceMin,
+          eyeDistanceMax
+        );
       }
-      const rect = canvas.getBoundingClientRect();
-      const centerX = sumX / activePointers.size;
-      const centerY = sumY / activePointers.size;
-      const nx = ((centerX - rect.left) / rect.width) * 2 - 1;
-      const ny = ((centerY - rect.top) / rect.height) * 2 - 1;
-      state.spin.set(
-        THREE.MathUtils.clamp(nx * 0.92, -1, 1),
-        THREE.MathUtils.clamp(ny * 0.92, -1, 1)
-      );
+
       state.canvasGestureMoved = true;
       return;
     }
@@ -675,13 +765,13 @@ function setupCanvasGestures() {
 
     if (state.viewMode === "cue") {
       state.yaw = state.canvasGestureStartYaw - dx * 0.0052;
-      state.pitch = THREE.MathUtils.clamp(state.canvasGestureStartPitch - dy * 0.0036, -1.15, 0.65);
+      state.pitch = THREE.MathUtils.clamp(state.canvasGestureStartPitch + dy * 0.0036, -1.15, 0.65);
       state.cueLift = THREE.MathUtils.clamp((state.pitch + 0.05) * 0.45, 0.015, 0.26);
       return;
     }
 
     state.eyeYaw = state.canvasGestureStartEyeYaw - dx * 0.0052;
-    state.eyePitch = THREE.MathUtils.clamp(state.canvasGestureStartEyePitch - dy * 0.0036, -0.1, 1.05);
+    state.eyePitch = THREE.MathUtils.clamp(state.canvasGestureStartEyePitch + dy * 0.0036, -0.1, 1.05);
   });
 
   const finishGesture = (event) => {
@@ -694,6 +784,13 @@ function setupCanvasGestures() {
       primaryPointerId = null;
       state.canvasGestureMoved = false;
     }
+
+    if (activePointers.size < 2) {
+      pinchStartDistance = 0;
+      pinchStartEyeDistance = state.eyeDistance;
+      pinchStartCueDistance = state.cueCameraDistance;
+    }
+
     if (canvas.hasPointerCapture(event.pointerId)) {
       canvas.releasePointerCapture(event.pointerId);
     }
@@ -747,7 +844,7 @@ function updateCueAndCamera(dt) {
 
     const cueCameraLift = THREE.MathUtils.clamp(cueCameraHeight + state.pitch * 0.82, 0.045, 0.72);
     cameraEye = cameraOrigin.clone()
-      .add(baseForward.clone().multiplyScalar(-cueCameraBackDistance))
+      .add(baseForward.clone().multiplyScalar(-state.cueCameraDistance))
       .add(up.clone().multiplyScalar(cueCameraLift))
       .add(baseRight.clone().multiplyScalar(cueCameraSideOffset));
     cameraFocus = cueBall.position.clone()
@@ -790,6 +887,7 @@ function updateCueAndCamera(dt) {
 
   cameraRig.position.copy(cameraEye);
   camera.lookAt(cameraFocus);
+  syncModeControls();
 
   if (!ballsMoving && !state.cueStrikeActive) {
     state.shotInFlight = false;

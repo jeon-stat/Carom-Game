@@ -112,6 +112,14 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.18);
 }
 
+.hud-button:disabled,
+.shoot-fab:disabled,
+.is-disabled {
+  opacity: 0.42;
+  filter: saturate(0.45);
+  cursor: not-allowed;
+}
+
 .touch-pad,
 .spin-pad {
   position: relative;
@@ -224,6 +232,14 @@ body {
   border-radius: 999px;
 }
 
+#zoomOutButton,
+#zoomInButton {
+  min-width: 46px;
+  padding-inline: 0;
+  font-size: 20px;
+  line-height: 1;
+}
+
 .shoot-fab {
   border: 0;
   min-width: 82px;
@@ -327,6 +343,12 @@ body {
     min-width: 68px;
     min-height: 68px;
     font-size: 16px;
+  }
+
+  #zoomOutButton,
+  #zoomInButton {
+    min-width: 40px;
+    padding-inline: 0;
   }
 
   .controls-drawer {
