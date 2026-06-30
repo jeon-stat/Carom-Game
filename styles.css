@@ -86,6 +86,12 @@ body {
   font-size: 13px;
 }
 
+.build-stamp {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  opacity: 0.78;
+}
+
 .panel {
   padding: 12px;
 }

@@ -447,12 +447,22 @@ export class BilliardPhysicsManager {
     ball.velocity.z = moveTowards(ball.velocity.z, 0, this.rollingFriction * this.gravity * 0.05 * dt);
     ball.angularVelocity.x = moveTowards(ball.angularVelocity.x, 0, this.spinAngularDecel * 0.75 * dt);
     ball.angularVelocity.z = moveTowards(ball.angularVelocity.z, 0, this.spinAngularDecel * 0.75 * dt);
-    ball.angularVelocity.y = moveTowards(ball.angularVelocity.y, 0, this.spinAngularDecel * 2.2 * dt);
+    ball.angularVelocity.y = moveTowards(ball.angularVelocity.y, 0, this.spinAngularDecel * 3.6 * dt);
+
+    if (this.getPlanarSpeed(ball.velocity) < this.stopVelocityThreshold * 0.6
+      && Math.abs(ball.angularVelocity.y) < this.stopAngularThreshold * 10) {
+      zeroBallMotion(ball);
+    }
   }
 
   integrateRolling(ball, dt) {
     const planar = this._scratchA.set(ball.velocity.x, 0, ball.velocity.z);
     const speed = planar.length();
+
+    if (speed < this.stopVelocityThreshold * 1.2) {
+      zeroBallMotion(ball);
+      return;
+    }
 
     if (speed > EPSILON) {
       const decel = this.rollingFriction * this.gravity;
@@ -484,6 +494,11 @@ export class BilliardPhysicsManager {
     const newSlip = this.getBottomSlipVector(ball, this._scratchB).length();
     if (newSlip < this.stopVelocityThreshold * 0.4) {
       this.forceRoll(ball.velocity, ball.angularVelocity);
+    }
+
+    if (this.getPlanarSpeed(ball.velocity) < this.stopVelocityThreshold * 1.2
+      && newSlip < this.stopVelocityThreshold) {
+      zeroBallMotion(ball);
     }
   }
 
@@ -537,6 +552,12 @@ export class BilliardPhysicsManager {
   }
 
   forceRoll(v, w) {
+    if (Math.hypot(v.x, v.z) < this.stopVelocityThreshold * 1.2) {
+      w.x = 0;
+      w.z = 0;
+      return;
+    }
+
     w.x = v.z / this.ballRadius;
     w.z = -v.x / this.ballRadius;
   }
