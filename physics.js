@@ -54,6 +54,12 @@ function setPlanar(vector, x, z) {
   return vector;
 }
 
+function zeroBallMotion(ball) {
+  ball.velocity.set(0, 0, 0);
+  ball.angularVelocity.set(0, 0, 0);
+  ball.state = BallState.Stationary;
+}
+
 export class BilliardBallPhysics {
   constructor({
     id = 0,
@@ -384,7 +390,7 @@ export class BilliardPhysicsManager {
     if (planarSpeed < this.stopVelocityThreshold
       && spinSpeed < this.stopAngularThreshold
       && slipSpeed < this.stopVelocityThreshold * 0.5) {
-      ball.state = BallState.Stationary;
+      zeroBallMotion(ball);
       return;
     }
 
@@ -406,14 +412,15 @@ export class BilliardPhysicsManager {
     }
 
     ball.state = spinSpeed >= this.stopAngularThreshold ? BallState.Spinning : BallState.Stationary;
+    if (ball.state === BallState.Stationary) {
+      zeroBallMotion(ball);
+    }
   }
 
   integrateBall(ball, dt) {
     switch (ball.state) {
       case BallState.Stationary:
-        ball.velocity.set(0, 0, 0);
-        ball.angularVelocity.x = 0;
-        ball.angularVelocity.z = 0;
+        zeroBallMotion(ball);
         break;
       case BallState.Spinning:
         this.integrateSpinning(ball, dt);
@@ -828,9 +835,7 @@ export class BilliardPhysicsManager {
       && spinSpeed < this.stopAngularThreshold
       && angularXZ < this.stopAngularThreshold
       && slipSpeed < this.stopVelocityThreshold * 0.4) {
-      ball.velocity.set(0, 0, 0);
-      ball.angularVelocity.set(0, 0, 0);
-      ball.state = BallState.Stationary;
+      zeroBallMotion(ball);
       return;
     }
 
@@ -838,9 +843,7 @@ export class BilliardPhysicsManager {
       && angularXZ < spinSnapThreshold
       && spinSpeed < spinSnapThreshold
       && slipSpeed < this.stopVelocityThreshold * 0.8) {
-      ball.velocity.set(0, 0, 0);
-      ball.angularVelocity.set(0, 0, 0);
-      ball.state = BallState.Stationary;
+      zeroBallMotion(ball);
       return;
     }
 

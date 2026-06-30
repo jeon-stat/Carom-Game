@@ -196,10 +196,10 @@ window.physicsManager = physicsManager;
 window.billiardsBalls = balls;
 
 const ballDefs = [
-  { name: "cue", color: 0xf7f7f2, accent: 0xd34840, number: "C", position: new THREE.Vector3(-0.58, ballRadius, 0) },
-  { name: "yellow", color: 0xefb11b, accent: 0x202020, number: "Y", position: new THREE.Vector3(0.5, ballRadius, -0.24) },
-  { name: "red", color: 0xb8211f, accent: 0xffffff, number: "R", position: new THREE.Vector3(0.55, ballRadius, 0.18) },
-  { name: "black", color: 0x1d1d22, accent: 0xf1c64c, number: "K", position: new THREE.Vector3(0.68, ballRadius, 0.03) }
+  { name: "cue", color: 0xf6f2de, stripeColor: 0xd43834, stripeHighlight: 0xffb2a3, stripeTilt: -0.22, position: new THREE.Vector3(-0.58, ballRadius, 0) },
+  { name: "yellow", color: 0xe5b11a, stripeColor: 0xd43834, stripeHighlight: 0xffcaa8, stripeTilt: 0.14, position: new THREE.Vector3(0.5, ballRadius, -0.24) },
+  { name: "red_a", color: 0xb32026, stripeColor: 0xf8efe2, stripeHighlight: 0xffffff, stripeTilt: -0.08, position: new THREE.Vector3(0.55, ballRadius, 0.18) },
+  { name: "red_b", color: 0xc91c28, stripeColor: 0xf7ead5, stripeHighlight: 0xffffff, stripeTilt: 0.28, position: new THREE.Vector3(0.68, ballRadius, 0.03) }
 ];
 
 for (const def of ballDefs) {
@@ -370,7 +370,7 @@ function buildTable() {
   }
 }
 
-function makeBallTexture(baseColor, accentColor, label) {
+function makeBallTexture(baseColor, stripeColor, stripeHighlight, stripeTilt = 0) {
   const size = 512;
   const textureCanvas = document.createElement("canvas");
   textureCanvas.width = size;
@@ -378,7 +378,8 @@ function makeBallTexture(baseColor, accentColor, label) {
   const ctx = textureCanvas.getContext("2d");
 
   const base = `#${baseColor.toString(16).padStart(6, "0")}`;
-  const accent = `#${accentColor.toString(16).padStart(6, "0")}`;
+  const stripe = `#${stripeColor.toString(16).padStart(6, "0")}`;
+  const highlight = `#${stripeHighlight.toString(16).padStart(6, "0")}`;
 
   const gradient = ctx.createRadialGradient(size * 0.32, size * 0.26, size * 0.08, size * 0.5, size * 0.5, size * 0.5);
   gradient.addColorStop(0, "#ffffff");
@@ -396,19 +397,45 @@ function makeBallTexture(baseColor, accentColor, label) {
   ctx.arc(size / 2, size / 2, size * 0.5 - 2, 0, Math.PI * 2);
   ctx.clip();
 
-  ctx.fillStyle = accent;
-  ctx.fillRect(size * 0.43, size * 0.08, size * 0.14, size * 0.84);
+  ctx.translate(size / 2, size / 2);
+  ctx.rotate(stripeTilt);
+  ctx.translate(-size / 2, -size / 2);
 
-  ctx.fillStyle = "rgba(255, 255, 255, 0.82)";
+  const drawHelixRibbon = (offsetX, width, color, alpha) => {
+    ctx.beginPath();
+    ctx.moveTo(size * (0.2 + offsetX), size * 0.05);
+    ctx.bezierCurveTo(
+      size * (0.05 + offsetX), size * 0.18,
+      size * (0.48 + offsetX), size * 0.38,
+      size * (0.38 + offsetX), size * 0.52
+    );
+    ctx.bezierCurveTo(
+      size * (0.29 + offsetX), size * 0.66,
+      size * (0.74 + offsetX), size * 0.82,
+      size * (0.58 + offsetX), size * 0.96
+    );
+    ctx.lineWidth = width;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = alpha;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  };
+
+  drawHelixRibbon(0, size * 0.18, stripe, 0.96);
+  drawHelixRibbon(0.018, size * 0.07, highlight, 0.92);
+  drawHelixRibbon(-0.05, size * 0.085, "rgba(255,255,255,0.2)", 0.42);
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  const sheen = ctx.createRadialGradient(size * 0.36, size * 0.26, size * 0.02, size * 0.32, size * 0.22, size * 0.22);
+  sheen.addColorStop(0, "rgba(255,255,255,0.95)");
+  sheen.addColorStop(0.35, "rgba(255,255,255,0.28)");
+  sheen.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = sheen;
   ctx.beginPath();
-  ctx.arc(size * 0.63, size * 0.33, size * 0.07, 0, Math.PI * 2);
+  ctx.arc(size * 0.33, size * 0.24, size * 0.18, 0, Math.PI * 2);
   ctx.fill();
-
-  ctx.fillStyle = accent;
-  ctx.font = `bold ${Math.round(size * 0.12)}px Arial, sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(label, size * 0.63, size * 0.335);
   ctx.restore();
 
   const texture = new THREE.CanvasTexture(textureCanvas);
@@ -422,17 +449,17 @@ function setControlsOpen(open) {
   controlsToggle.textContent = open ? "닫기" : "조작";
 }
 
-function createBall({ name, color, accent, number, position }) {
+function createBall({ name, color, stripeColor, stripeHighlight, stripeTilt, position }) {
   const group = new THREE.Group();
-  const map = makeBallTexture(color, accent, number);
+  const map = makeBallTexture(color, stripeColor, stripeHighlight, stripeTilt);
   const body = new THREE.Mesh(
     new THREE.SphereGeometry(ballRadius, 48, 48),
     new THREE.MeshStandardMaterial({
       color,
       map,
-      emissive: new THREE.Color(color).multiplyScalar(name === "black" ? 0.02 : 0.08),
+      emissive: new THREE.Color(color).multiplyScalar(0.06),
       emissiveIntensity: 1,
-      roughness: 0.18,
+      roughness: 0.14,
       metalness: 0.02
     })
   );
