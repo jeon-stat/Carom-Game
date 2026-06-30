@@ -49,6 +49,11 @@ function upCross(vector, target = new THREE.Vector3()) {
   return target.set(vector.z, 0, -vector.x);
 }
 
+function setPlanar(vector, x, z) {
+  vector.set(x, 0, z);
+  return vector;
+}
+
 export class BilliardBallPhysics {
   constructor({
     id = 0,
@@ -222,6 +227,8 @@ export class BilliardPhysicsManager {
     this.I = (2 / 5) * this.ballMass * this.ballRadius * this.ballRadius;
     this.Mz = ((this.rollingFriction * this.ballMass * this.gravity * 2) / 3) * this.spinningFriction;
     this.Mxy = (7 / (5 * Math.SQRT2)) * this.ballRadius * this.slidingFriction * this.ballMass * this.gravity;
+    this.slideAngularAccel = (5 * this.slidingFriction * this.gravity) / (2 * this.ballRadius);
+    this.spinAngularDecel = (5 * this.spinningFriction * this.gravity) / (2 * this.ballRadius);
   }
 
   registerBall(ball) {
@@ -264,7 +271,7 @@ export class BilliardPhysicsManager {
 
     ball.velocity.copy(strike.vel);
     ball.velocity.y = 0;
-    ball.angularVelocity.set(0, 0, 0);
+    ball.angularVelocity.copy(strike.rvel);
 
     ball.state = BallState.Sliding;
     ball.setPocketed(false);
@@ -274,11 +281,31 @@ export class BilliardPhysicsManager {
   cueStrike(angle, power, offset, elevation = 0) {
     const speed = clamp(power, 0, 160 * this.ballRadius);
     const vel = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)).multiplyScalar(speed);
-    return { vel, rvel: new THREE.Vector3() };
+    const rvel = this.cueToSpin(offset, vel, elevation);
+    return { vel, rvel };
   }
 
   cueToSpin(offset, v, elevation = 0) {
-    return new THREE.Vector3();
+    const tip = offset instanceof THREE.Vector2
+      ? offset
+      : new THREE.Vector2(offset?.x ?? 0, offset?.y ?? 0);
+    const planarSpeed = Math.max(this.getPlanarSpeed(v), 0.001);
+    const dir = this._scratchA.copy(v).setY(0).normalize();
+    const rollAxis = upCross(dir, this._scratchB);
+
+    const drawFollow = clamp(-tip.y, -1, 1);
+    const side = clamp(tip.x, -1, 1);
+    const spinScale = planarSpeed / this.ballRadius;
+
+    const rollSpin = rollAxis.multiplyScalar(spinScale * (1 + drawFollow * 1.35));
+    const sideSpin = side * spinScale * 1.9;
+    const masseLift = clamp(elevation, 0, 0.75) * spinScale * 0.18;
+
+    return new THREE.Vector3(
+      rollSpin.x,
+      sideSpin + masseLift,
+      rollSpin.z
+    );
   }
 
   step(dt) {
@@ -297,7 +324,6 @@ export class BilliardPhysicsManager {
 
         this.updateState(ball);
         this.integrateBall(ball, stepDt);
-        ball.angularVelocity.set(0, 0, 0);
       }
 
       this.resolveCushions();
@@ -311,7 +337,6 @@ export class BilliardPhysicsManager {
 
         this.updateState(ball);
         this.snapToRest(ball);
-        ball.angularVelocity.set(0, 0, 0);
         ball.syncTransform();
         ball.updateVisualSpin(stepDt);
       }
@@ -409,9 +434,11 @@ export class BilliardPhysicsManager {
   }
 
   integrateSpinning(ball, dt) {
-    ball.velocity.x = moveTowards(ball.velocity.x, 0, this.slidingFriction * this.gravity * 0.08 * dt);
-    ball.velocity.z = moveTowards(ball.velocity.z, 0, this.slidingFriction * this.gravity * 0.08 * dt);
-    ball.angularVelocity.set(0, 0, 0);
+    ball.velocity.x = moveTowards(ball.velocity.x, 0, this.rollingFriction * this.gravity * 0.05 * dt);
+    ball.velocity.z = moveTowards(ball.velocity.z, 0, this.rollingFriction * this.gravity * 0.05 * dt);
+    ball.angularVelocity.x = moveTowards(ball.angularVelocity.x, 0, this.spinAngularDecel * 0.35 * dt);
+    ball.angularVelocity.z = moveTowards(ball.angularVelocity.z, 0, this.spinAngularDecel * 0.35 * dt);
+    ball.angularVelocity.y = moveTowards(ball.angularVelocity.y, 0, this.spinAngularDecel * dt);
   }
 
   integrateRolling(ball, dt) {
@@ -426,22 +453,29 @@ export class BilliardPhysicsManager {
       ball.velocity.z = planar.z;
     }
 
-    ball.angularVelocity.set(0, 0, 0);
+    this.forceRoll(ball.velocity, ball.angularVelocity);
+    ball.angularVelocity.y = moveTowards(ball.angularVelocity.y, 0, this.spinAngularDecel * 0.55 * dt);
   }
 
   integrateSliding(ball, dt) {
-    const planar = this._scratchA.set(ball.velocity.x, 0, ball.velocity.z);
-    const speed = planar.length();
+    const slip = this.getBottomSlipVector(ball, this._scratchA);
+    const slipSpeed = slip.length();
 
-    if (speed > EPSILON) {
-      const decel = this.slidingFriction * this.gravity;
-      const newSpeed = Math.max(0, speed - decel * dt);
-      planar.multiplyScalar(newSpeed / speed);
-      ball.velocity.x = planar.x;
-      ball.velocity.z = planar.z;
+    if (slipSpeed > EPSILON) {
+      const slipDir = slip.multiplyScalar(1 / slipSpeed);
+      const linearStep = this.slidingFriction * this.gravity * dt;
+      ball.velocity.addScaledVector(slipDir, -linearStep);
+
+      ball.angularVelocity.x += this.slideAngularAccel * slipDir.z * dt;
+      ball.angularVelocity.z -= this.slideAngularAccel * slipDir.x * dt;
     }
 
-    ball.angularVelocity.set(0, 0, 0);
+    ball.angularVelocity.y = moveTowards(ball.angularVelocity.y, 0, this.spinAngularDecel * 0.4 * dt);
+
+    const newSlip = this.getBottomSlipVector(ball, this._scratchB).length();
+    if (newSlip < this.stopVelocityThreshold * 0.4) {
+      this.forceRoll(ball.velocity, ball.angularVelocity);
+    }
   }
 
   sliding(v, w) {
@@ -551,7 +585,10 @@ export class BilliardPhysicsManager {
     const vt = ball.velocity.dot(t);
     ball.velocity.addScaledVector(n, -(1 + this.cushionRestitution) * vn);
     ball.velocity.addScaledVector(t, -this.cushionFriction * vt);
-    ball.angularVelocity.set(0, 0, 0);
+    const tangentialContactSpeed = vt - ball.angularVelocity.y * this.ballRadius;
+    ball.angularVelocity.y += (tangentialContactSpeed / Math.max(this.ballRadius, EPSILON)) * 0.14;
+    this.forceRoll(ball.velocity, ball.angularVelocity);
+    ball.angularVelocity.y *= 0.92;
   }
 
   bounceHanBlend(v, w) {
@@ -717,8 +754,12 @@ export class BilliardPhysicsManager {
 
           a.velocity.addScaledVector(impulse, 1 / a.mass);
           b.velocity.addScaledVector(impulse, -1 / b.mass);
-          a.angularVelocity.set(0, 0, 0);
-          b.angularVelocity.set(0, 0, 0);
+          const contactRadiusA = this._scratchF.copy(ab).multiplyScalar(a.radius);
+          const contactRadiusB = ab.clone().multiplyScalar(-b.radius);
+          a.angularVelocity.add(contactRadiusA.clone().cross(impulse).multiplyScalar(1 / this.I));
+          b.angularVelocity.add(contactRadiusB.clone().cross(impulse.clone().multiplyScalar(-1)).multiplyScalar(1 / this.I));
+          a.angularVelocity.y *= 0.985;
+          b.angularVelocity.y *= 0.985;
           a.state = BallState.Sliding;
           b.state = BallState.Sliding;
 
@@ -801,10 +842,10 @@ export class BilliardPhysicsManager {
   }
 
   getBottomSlipVector(ball, target = new THREE.Vector3()) {
-    return target.set(
+    return setPlanar(
+      target,
       ball.velocity.x + ball.radius * ball.angularVelocity.z,
-      ball.velocity.z - ball.radius * ball.angularVelocity.x,
-      0
+      ball.velocity.z - ball.radius * ball.angularVelocity.x
     );
   }
 
