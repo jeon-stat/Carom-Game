@@ -195,8 +195,8 @@ export class BilliardPhysicsManager {
     rollingFriction = 0.015,
     spinningFriction = 0.05,
     spinDecay = 0.02,
-    ballRestitution = 0.95,
-    ballBallFrictionFloor = 0.08,
+    ballRestitution = 0.98,
+    ballBallFrictionFloor = 0.05,
     ballBallFrictionA = 0.009951,
     ballBallFrictionB = 0.108,
     ballBallFrictionC = 1.088,
@@ -277,6 +277,23 @@ export class BilliardPhysicsManager {
     this.spinAngularDecel = this.spinDecay * this.gravity;
   }
 
+  dampenCollisionSpin(ball) {
+    if (!ball) {
+      return;
+    }
+
+    ball.angularVelocity.x *= 0.97;
+    ball.angularVelocity.y *= 0.9;
+    ball.angularVelocity.z *= 0.97;
+
+    const planar = planarSpeed(ball.velocity);
+    const maxAngularSpeed = Math.max(24, (planar / Math.max(ball.radius, EPSILON)) * 1.75);
+    const angularSpeed = ball.angularVelocity.length();
+    if (angularSpeed > maxAngularSpeed) {
+      ball.angularVelocity.multiplyScalar(maxAngularSpeed / angularSpeed);
+    }
+  }
+
   registerBall(ball) {
     if (!ball || this.balls.includes(ball)) {
       return ball;
@@ -334,6 +351,7 @@ export class BilliardPhysicsManager {
     ball.velocity.set(0, 0, 0);
     ball.angularVelocity.set(0, 0, 0);
     ball.applyImpulseAtPoint(linearImpulse, contactOffset);
+    this.dampenCollisionSpin(ball);
     ball.state = BallState.Sliding;
     ball.setPocketed(false);
     ball.syncTransform();
@@ -686,8 +704,11 @@ export class BilliardPhysicsManager {
             .add(this._scratchB.copy(b.angularVelocity).cross(rb));
           const relative = vbContact.sub(vaContact);
           const vn = relative.dot(normal);
+          const centerRelative = this._scratchF.copy(b.velocity).sub(a.velocity);
+          const centerVn = centerRelative.dot(normal);
+          const approachSpeed = Math.min(vn, centerVn);
 
-          if (vn >= 0) {
+          if (approachSpeed >= 0) {
             continue;
           }
 
@@ -698,7 +719,7 @@ export class BilliardPhysicsManager {
             : this._scratchB.set(-normal.z, 0, normal.x);
 
           const invMassSum = a.inverseMass + b.inverseMass;
-          const normalImpulseMag = -(1 + this.ballRestitution) * vn / Math.max(invMassSum, EPSILON);
+          const normalImpulseMag = -(1 + this.ballRestitution) * approachSpeed / Math.max(invMassSum, EPSILON);
 
           const effectiveTangentInvMass = invMassSum
             + (a.radius * a.radius * a.inverseInertia)
@@ -723,6 +744,8 @@ export class BilliardPhysicsManager {
           b.applyImpulseAtPoint(impulse, rb);
           a.state = BallState.Sliding;
           b.state = BallState.Sliding;
+          this.dampenCollisionSpin(a);
+          this.dampenCollisionSpin(b);
 
           this.recordDebugContact(
             a.position.clone().add(b.position).multiplyScalar(0.5),
