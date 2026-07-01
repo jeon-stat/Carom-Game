@@ -196,7 +196,7 @@ export class BilliardPhysicsManager {
     spinningFriction = 0.05,
     spinDecay = 0.02,
     ballRestitution = 0.95,
-    ballBallFrictionFloor = 0.08,
+    ballBallFrictionFloor = 0.05,
     ballBallFrictionA = 0.009951,
     ballBallFrictionB = 0.108,
     ballBallFrictionC = 1.088,
@@ -641,7 +641,9 @@ export class BilliardPhysicsManager {
 
     const vt = contactVelocity.dot(t);
     const normalImpulseMag = -(1 + this.cushionRestitution) * vn * ball.mass;
-    const desiredTangentialImpulse = -(2 / 7) * ball.mass * vt;
+    const tangentialDenom = ball.inverseMass
+      + ball.inverseInertia * this._scratchE.copy(contactOffset).cross(t).lengthSq();
+    const desiredTangentialImpulse = -vt / Math.max(tangentialDenom, EPSILON);
     const tangentialLimit = Math.abs(normalImpulseMag) * this.cushionFriction;
     const tangentialImpulseMag = clamp(
       desiredTangentialImpulse,
@@ -732,8 +734,13 @@ export class BilliardPhysicsManager {
           + this.ballBallFrictionB * Math.exp(-this.ballBallFrictionC * tangentSpeed);
         const friction = Math.max(this.ballBallFrictionFloor, dynamicFriction);
         const tangentialLimit = Math.abs(normalImpulseMag) * friction;
+        const tangentMassA = a.inverseMass
+          + a.inverseInertia * this._scratchG.copy(ra).cross(tangent).lengthSq();
+        const tangentMassB = b.inverseMass
+          + b.inverseInertia * this._scratchH.copy(rb).cross(tangent).lengthSq();
+        const tangentDenom = Math.max(tangentMassA + tangentMassB, EPSILON);
         const tangentialImpulseMag = Math.min(
-          tangentSpeed / Math.max(invMassSum, EPSILON),
+          tangentSpeed / tangentDenom,
           tangentialLimit
         );
 

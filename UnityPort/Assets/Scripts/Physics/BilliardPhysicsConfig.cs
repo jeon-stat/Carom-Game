@@ -18,7 +18,7 @@ namespace CaromGame.Physics
 
         [Header("Ball-Ball")]
         [Range(0f, 1f)] public float ballRestitution = 0.95f;
-        [Min(0f)] public float ballBallFrictionFloor = 0.08f;
+        [Min(0f)] public float ballBallFrictionFloor = 0.05f;
         [Min(0f)] public float ballBallFrictionA = 0.009951f;
         [Min(0f)] public float ballBallFrictionB = 0.108f;
         [Min(0f)] public float ballBallFrictionC = 1.088f;

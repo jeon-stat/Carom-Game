@@ -62,7 +62,10 @@ namespace CaromGame.Physics
                 + config.BallBallFrictionB * Mathf.Exp(-config.BallBallFrictionC * tangentSpeed);
             float friction = Mathf.Max(config.BallBallFrictionFloor, dynamicFriction);
             float tangentImpulseLimit = Mathf.Abs(normalImpulseMag) * friction;
-            float tangentImpulseMag = Mathf.Min(tangentSpeed / Mathf.Max(invMassSum, Epsilon), tangentImpulseLimit);
+            float tangentDenom = a.InverseMass + b.InverseMass
+                + a.InverseInertia * Vector3.Cross(ra, tangentDir).sqrMagnitude
+                + b.InverseInertia * Vector3.Cross(rb, tangentDir).sqrMagnitude;
+            float tangentImpulseMag = Mathf.Min(tangentSpeed / Mathf.Max(tangentDenom, Epsilon), tangentImpulseLimit);
 
             Vector3 impulse = (normal * normalImpulseMag) - (tangentDir * tangentImpulseMag);
 
@@ -168,7 +171,9 @@ namespace CaromGame.Physics
 
             float normalImpulseMag = -(1f + config.CushionRestitution) * normalSpeed / Mathf.Max(ball.InverseMass, Epsilon);
             float tangentialLimit = Mathf.Abs(normalImpulseMag) * config.CushionFriction;
-            float tangentialImpulseMag = Mathf.Min(tangentSpeed / Mathf.Max(ball.InverseMass, Epsilon), tangentialLimit);
+            float tangentDenom = ball.InverseMass
+                + ball.InverseInertia * Vector3.Cross(contactOffset, tangentDir).sqrMagnitude;
+            float tangentialImpulseMag = Mathf.Min(tangentSpeed / Mathf.Max(tangentDenom, Epsilon), tangentialLimit);
 
             Vector3 impulse = (normal * normalImpulseMag) - (tangentDir * tangentialImpulseMag);
             ball.ApplyImpulseAtPoint(impulse, contactOffset);
