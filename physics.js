@@ -196,7 +196,7 @@ export class BilliardPhysicsManager {
     spinningFriction = 0.05,
     spinDecay = 0.02,
     ballRestitution = 0.95,
-    ballFriction = 0.08,
+    ballBallFrictionFloor = 0.08,
     ballBallFrictionA = 0.009951,
     ballBallFrictionB = 0.108,
     ballBallFrictionC = 1.088,
@@ -229,7 +229,7 @@ export class BilliardPhysicsManager {
     this.spinningFriction = spinningFriction;
     this.spinDecay = spinDecay ?? 0.02;
     this.ballRestitution = ballRestitution;
-    this.ballFriction = ballFriction;
+    this.ballBallFrictionFloor = ballBallFrictionFloor;
     this.ballBallFrictionA = ballBallFrictionA;
     this.ballBallFrictionB = ballBallFrictionB;
     this.ballBallFrictionC = ballBallFrictionC;
@@ -708,7 +708,7 @@ export class BilliardPhysicsManager {
             : 0;
           const dynamicFriction = this.ballBallFrictionA
             + this.ballBallFrictionB * Math.exp(-this.ballBallFrictionC * tangentSpeed);
-          const friction = Math.max(this.ballFriction, dynamicFriction);
+          const friction = Math.max(this.ballBallFrictionFloor, dynamicFriction);
           const tangentialLimit = Math.abs(normalImpulseMag) * friction;
           const tangentialImpulseMag = clamp(
             desiredTangentialImpulse,

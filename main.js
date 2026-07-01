@@ -79,8 +79,8 @@ floor.receiveShadow = true;
 scene.add(floor);
 
 const table = {
-  playWidth: 2.54,
-  playHeight: 1.27,
+  playWidth: 2.36,
+  playHeight: 1.12,
   cushionHeight: 0.052,
   clothY: 0,
   railOuter: 0.12,
@@ -177,7 +177,7 @@ const physicsManager = new BilliardPhysicsManager({
   spinningFriction: 0.05,
   spinDecay: 0.02,
   ballRestitution: 0.95,
-  ballFriction: 0.08,
+  ballBallFrictionFloor: 0.08,
   ballBallFrictionA: 0.009951,
   ballBallFrictionB: 0.108,
   ballBallFrictionC: 1.088,
