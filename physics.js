@@ -195,8 +195,8 @@ export class BilliardPhysicsManager {
     rollingFriction = 0.015,
     spinningFriction = 0.05,
     spinDecay = 0.02,
-    ballRestitution = 0.98,
-    ballBallFrictionFloor = 0.05,
+    ballRestitution = 0.95,
+    ballBallFrictionFloor = 0.08,
     ballBallFrictionA = 0.009951,
     ballBallFrictionB = 0.108,
     ballBallFrictionC = 1.088,
@@ -277,23 +277,6 @@ export class BilliardPhysicsManager {
     this.spinAngularDecel = this.spinDecay * this.gravity;
   }
 
-  dampenCollisionSpin(ball) {
-    if (!ball) {
-      return;
-    }
-
-    ball.angularVelocity.x *= 0.97;
-    ball.angularVelocity.y *= 0.9;
-    ball.angularVelocity.z *= 0.97;
-
-    const planar = planarSpeed(ball.velocity);
-    const maxAngularSpeed = Math.max(24, (planar / Math.max(ball.radius, EPSILON)) * 1.75);
-    const angularSpeed = ball.angularVelocity.length();
-    if (angularSpeed > maxAngularSpeed) {
-      ball.angularVelocity.multiplyScalar(maxAngularSpeed / angularSpeed);
-    }
-  }
-
   registerBall(ball) {
     if (!ball || this.balls.includes(ball)) {
       return ball;
@@ -351,7 +334,6 @@ export class BilliardPhysicsManager {
     ball.velocity.set(0, 0, 0);
     ball.angularVelocity.set(0, 0, 0);
     ball.applyImpulseAtPoint(linearImpulse, contactOffset);
-    this.dampenCollisionSpin(ball);
     ball.state = BallState.Sliding;
     ball.setPocketed(false);
     ball.syncTransform();
@@ -654,104 +636,100 @@ export class BilliardPhysicsManager {
   }
 
   resolveBallCollisions() {
-    for (let pass = 0; pass < 2; pass += 1) {
-      for (let i = 0; i < this.balls.length; i += 1) {
-        const a = this.balls[i];
-        if (!a || a.isPocketed) {
+    for (let i = 0; i < this.balls.length; i += 1) {
+      const a = this.balls[i];
+      if (!a || a.isPocketed) {
+        continue;
+      }
+
+      for (let j = i + 1; j < this.balls.length; j += 1) {
+        const b = this.balls[j];
+        if (!b || b.isPocketed) {
           continue;
         }
 
-        for (let j = i + 1; j < this.balls.length; j += 1) {
-          const b = this.balls[j];
-          if (!b || b.isPocketed) {
-            continue;
-          }
+        const delta = this._scratchA.copy(b.position).sub(a.position);
+        let distance = delta.length();
+        const minDistance = a.radius + b.radius;
 
-          const delta = this._scratchA.copy(b.position).sub(a.position);
-          let distance = delta.length();
-          const minDistance = a.radius + b.radius;
+        if (distance >= minDistance) {
+          continue;
+        }
 
-          if (distance >= minDistance) {
-            continue;
-          }
-
-          const normal = this._scratchB;
-          if (distance < EPSILON) {
-            const relativeVelocity = this._scratchC.copy(b.velocity).sub(a.velocity);
-            if (relativeVelocity.lengthSq() > EPSILON) {
-              normal.copy(relativeVelocity).normalize();
-            } else {
-              normal.set(1, 0, 0);
-            }
+        const normal = this._scratchB;
+        if (distance < EPSILON) {
+          const relativeVelocity = this._scratchC.copy(b.velocity).sub(a.velocity);
+          if (relativeVelocity.lengthSq() > EPSILON) {
+            normal.copy(relativeVelocity).normalize();
           } else {
-            normal.copy(delta).divideScalar(distance);
+            normal.set(1, 0, 0);
           }
+        } else {
+          normal.copy(delta).divideScalar(distance);
+        }
 
-          if (distance < EPSILON) {
-            distance = EPSILON;
-          }
+        if (distance < EPSILON) {
+          distance = EPSILON;
+        }
 
-          const overlap = minDistance - distance;
-          const correction = overlap * 0.5 + 1e-4;
-          a.position.addScaledVector(normal, -correction);
-          b.position.addScaledVector(normal, correction);
+        const overlap = minDistance - distance;
+        const correction = overlap * 0.5 + 1e-4;
+        a.position.addScaledVector(normal, -correction);
+        b.position.addScaledVector(normal, correction);
 
-          const ra = this._scratchD.copy(normal).multiplyScalar(a.radius);
-          const rb = this._scratchE.copy(normal).multiplyScalar(-b.radius);
-          const vaContact = this._scratchF.copy(a.velocity)
-            .add(this._scratchC.copy(a.angularVelocity).cross(ra));
-          const vbContact = this._scratchC.copy(b.velocity)
-            .add(this._scratchA.copy(b.angularVelocity).cross(rb));
-          const relative = vbContact.sub(vaContact);
-          const vn = relative.dot(normal);
+        const ra = this._scratchD.copy(normal).multiplyScalar(a.radius);
+        const rb = this._scratchE.copy(normal).multiplyScalar(-b.radius);
+        const vaContact = this._scratchF.copy(a.velocity)
+          .add(this._scratchC.copy(a.angularVelocity).cross(ra));
+        const vbContact = this._scratchC.copy(b.velocity)
+          .add(this._scratchA.copy(b.angularVelocity).cross(rb));
+        const relative = vbContact.sub(vaContact);
+        const normalSpeed = relative.dot(normal);
 
-          if (vn >= 0) {
-            continue;
-          }
-
-          const tangentVelocity = this._scratchB.copy(relative).sub(this._scratchD.copy(normal).multiplyScalar(vn));
-          const tangentSpeed = tangentVelocity.length();
-          const tangent = tangentSpeed > EPSILON
-            ? tangentVelocity.multiplyScalar(1 / tangentSpeed)
-            : this._scratchD.set(-normal.z, 0, normal.x);
-
-          const invMassSum = a.inverseMass + b.inverseMass;
-          const normalImpulseMag = -(1 + this.ballRestitution) * vn / Math.max(invMassSum, EPSILON);
-
-          const effectiveTangentInvMass = invMassSum
-            + (a.radius * a.radius * a.inverseInertia)
-            + (b.radius * b.radius * b.inverseInertia);
-          const desiredTangentialImpulse = tangentSpeed > EPSILON
-            ? -tangentSpeed / Math.max(effectiveTangentInvMass, EPSILON)
-            : 0;
-          const dynamicFriction = this.ballBallFrictionA
-            + this.ballBallFrictionB * Math.exp(-this.ballBallFrictionC * tangentSpeed);
-          const friction = Math.max(this.ballBallFrictionFloor, dynamicFriction);
-          const tangentialLimit = Math.abs(normalImpulseMag) * friction;
-          const tangentialImpulseMag = clamp(
-            desiredTangentialImpulse,
-            -tangentialLimit,
-            tangentialLimit
-          );
-
-          const impulse = this._scratchE.copy(normal).multiplyScalar(normalImpulseMag)
-            .addScaledVector(tangent, tangentialImpulseMag);
-
-          a.applyImpulseAtPoint(impulse.clone().multiplyScalar(-1), ra);
-          b.applyImpulseAtPoint(impulse, rb);
-          a.state = BallState.Sliding;
-          b.state = BallState.Sliding;
-          this.dampenCollisionSpin(a);
-          this.dampenCollisionSpin(b);
-
+        if (normalSpeed >= 0) {
           this.recordDebugContact(
             a.position.clone().add(b.position).multiplyScalar(0.5),
             normal,
-            impulse,
+            new THREE.Vector3(),
             "ball",
             0x66ccff
           );
+          continue;
         }
+
+        const tangentVelocity = relative.sub(this._scratchB.copy(normal).multiplyScalar(normalSpeed));
+        const tangentSpeed = tangentVelocity.length();
+        const tangent = tangentSpeed > EPSILON
+          ? tangentVelocity.multiplyScalar(1 / tangentSpeed)
+          : this._scratchB.set(-normal.z, 0, normal.x);
+
+        const invMassSum = a.inverseMass + b.inverseMass;
+        const normalImpulseMag = -(1 + this.ballRestitution) * normalSpeed / Math.max(invMassSum, EPSILON);
+
+        const dynamicFriction = this.ballBallFrictionA
+          + this.ballBallFrictionB * Math.exp(-this.ballBallFrictionC * tangentSpeed);
+        const friction = Math.max(this.ballBallFrictionFloor, dynamicFriction);
+        const tangentialLimit = Math.abs(normalImpulseMag) * friction;
+        const tangentialImpulseMag = Math.min(
+          tangentSpeed / Math.max(invMassSum, EPSILON),
+          tangentialLimit
+        );
+
+        const impulse = this._scratchE.copy(normal).multiplyScalar(normalImpulseMag)
+          .addScaledVector(tangent, -tangentialImpulseMag);
+
+        a.applyImpulseAtPoint(impulse.clone().multiplyScalar(-1), ra);
+        b.applyImpulseAtPoint(impulse, rb);
+        a.state = BallState.Sliding;
+        b.state = BallState.Sliding;
+
+        this.recordDebugContact(
+          a.position.clone().add(b.position).multiplyScalar(0.5),
+          normal,
+          impulse,
+          "ball",
+          0x66ccff
+        );
       }
     }
   }
