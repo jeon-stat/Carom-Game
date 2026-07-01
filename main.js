@@ -670,16 +670,16 @@ function updateSpinFromPointer(event) {
 
   state.spin.set(
     THREE.MathUtils.clamp(tmpVec2.x, -1, 1),
-    THREE.MathUtils.clamp(tmpVec2.y, -1, 1)
+    THREE.MathUtils.clamp(-tmpVec2.y, -1, 1)
   );
   syncSpinThumb();
 }
 
 function syncSpinThumb() {
   spinThumb.style.left = `${50 + state.spin.x * 28}%`;
-  spinThumb.style.top = `${50 + state.spin.y * 28}%`;
+  spinThumb.style.top = `${50 - state.spin.y * 28}%`;
   spinXValue.textContent = state.spin.x.toFixed(2);
-  spinYValue.textContent = (-state.spin.y).toFixed(2);
+  spinYValue.textContent = state.spin.y.toFixed(2);
 }
 
 function shootCueBall() {

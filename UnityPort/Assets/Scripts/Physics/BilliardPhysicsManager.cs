@@ -237,7 +237,8 @@ namespace CaromGame.Physics
                 }
 
                 CueStrikeResult result = CueStrikeResolver.Resolve(ball, runtime, command);
-                ball.ApplyImpulseAtPoint(result.LinearImpulse, result.ContactPoint - ball.Position);
+                ball.ApplyImpulse(result.LinearImpulse);
+                ball.AngularVelocity += result.AngularImpulse;
                 ball.State = BallMotionState.Sliding;
 
                 debugContacts.Add(new PhysicsDebugContact

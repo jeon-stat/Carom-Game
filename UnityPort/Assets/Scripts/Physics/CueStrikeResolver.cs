@@ -37,11 +37,12 @@ namespace CaromGame.Physics
                 + (Vector3.up * (command.Elevation * ball.Radius * config.CueElevationLiftScale));
 
             linearImpulse += Vector3.up * (command.Elevation * impulseMagnitude * config.CueElevationLiftScale);
+            Vector3 angularImpulse = Vector3.Cross(contactOffset, linearImpulse) * ball.InverseInertia;
 
             return new CueStrikeResult
             {
                 LinearImpulse = linearImpulse,
-                AngularImpulse = Vector3.zero,
+                AngularImpulse = angularImpulse,
                 ContactPoint = ball.Position + contactOffset
             };
         }
