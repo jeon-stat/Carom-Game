@@ -154,7 +154,7 @@ const cueHeadGap = 0.16;
 const cuePullbackDistance = 0.48;
 const cueStrikeDuration = 0.16;
 const cueStrikeHitTime = 0.9;
-const cueTipOffsetLimit = 1;
+const cueTipOffsetLimit = 0.45;
 const cueStickStretch = 5.2;
 const cueCameraBackDistance = 2.35;
 const cueCameraHeight = 0.64;
@@ -177,7 +177,7 @@ const physicsManager = new BilliardPhysicsManager({
   spinningFriction: 0.05,
   spinDecay: 0.02,
   ballRestitution: 0.95,
-  ballBallFrictionFloor: 0.08,
+  ballBallFrictionFloor: 0.05,
   ballBallFrictionA: 0.009951,
   ballBallFrictionB: 0.108,
   ballBallFrictionC: 1.088,

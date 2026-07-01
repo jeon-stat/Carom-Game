@@ -263,6 +263,8 @@ export class BilliardPhysicsManager {
     this._scratchD = new THREE.Vector3();
     this._scratchE = new THREE.Vector3();
     this._scratchF = new THREE.Vector3();
+    this._scratchG = new THREE.Vector3();
+    this._scratchH = new THREE.Vector3();
     this._frameCounter = 0;
     this._lastDebugLogFrame = -1;
 
@@ -275,6 +277,26 @@ export class BilliardPhysicsManager {
     this.inverseInertia = this.inertia <= 0 ? 0 : 1 / this.inertia;
     this.slideAngularAccel = (5 * this.slidingFriction * this.gravity) / (2 * this.ballRadius);
     this.spinAngularDecel = this.spinDecay * this.gravity;
+  }
+
+  getBallEnergy(ball, velocity = ball.velocity, angularVelocity = ball.angularVelocity) {
+    const linearEnergy = 0.5 * ball.mass * velocity.lengthSq();
+    const inertia = (2 / 5) * ball.mass * ball.radius * ball.radius;
+    const angularEnergy = 0.5 * inertia * angularVelocity.lengthSq();
+    return linearEnergy + angularEnergy;
+  }
+
+  estimatePairEnergyAfterImpulse(a, b, ra, rb, impulse) {
+    const aLinear = this._scratchG.copy(a.velocity).addScaledVector(impulse, -a.inverseMass);
+    const bLinear = this._scratchH.copy(b.velocity).addScaledVector(impulse, b.inverseMass);
+
+    const aAngularImpulse = this._scratchD.copy(ra).cross(this._scratchE.copy(impulse).multiplyScalar(-1));
+    const bAngularImpulse = this._scratchF.copy(rb).cross(impulse);
+
+    const aAngular = this._scratchA.copy(a.angularVelocity).addScaledVector(aAngularImpulse, a.inverseInertia);
+    const bAngular = this._scratchB.copy(b.angularVelocity).addScaledVector(bAngularImpulse, b.inverseInertia);
+
+    return this.getBallEnergy(a, aLinear, aAngular) + this.getBallEnergy(b, bLinear, bAngular);
   }
 
   registerBall(ball) {
@@ -715,8 +737,29 @@ export class BilliardPhysicsManager {
           tangentialLimit
         );
 
-        const impulse = this._scratchE.copy(normal).multiplyScalar(normalImpulseMag)
-          .addScaledVector(tangent, -tangentialImpulseMag);
+        const baseImpulse = this._scratchE.copy(normal).multiplyScalar(normalImpulseMag);
+        const tangentImpulse = this._scratchC.copy(tangent).multiplyScalar(-tangentialImpulseMag);
+        const preEnergy = this.getBallEnergy(a) + this.getBallEnergy(b);
+
+        let tangentScale = 1;
+        if (tangentialImpulseMag > EPSILON) {
+          let low = 0;
+          let high = 1;
+          for (let iteration = 0; iteration < 7; iteration += 1) {
+            const mid = (low + high) * 0.5;
+            const candidateImpulse = new THREE.Vector3().copy(baseImpulse).addScaledVector(tangentImpulse, mid);
+            const candidateEnergy = this.estimatePairEnergyAfterImpulse(a, b, ra, rb, candidateImpulse);
+            if (candidateEnergy <= preEnergy + 1e-10) {
+              low = mid;
+            } else {
+              high = mid;
+            }
+          }
+
+          tangentScale = low;
+        }
+
+        const impulse = this._scratchE.copy(baseImpulse).addScaledVector(tangentImpulse, tangentScale);
 
         a.applyImpulseAtPoint(impulse.clone().multiplyScalar(-1), ra);
         b.applyImpulseAtPoint(impulse, rb);
