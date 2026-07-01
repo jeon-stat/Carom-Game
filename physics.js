@@ -194,11 +194,11 @@ export class BilliardPhysicsManager {
     slidingFriction = 0.2,
     rollingFriction = 0.015,
     spinningFriction = 0.05,
-    spinDecay = null,
-    ballRestitution = 0.98,
-    ballFriction = 0.01,
-    ballBallFrictionA = 0.006,
-    ballBallFrictionB = 0.07,
+    spinDecay = 0.02,
+    ballRestitution = 0.95,
+    ballFriction = 0.08,
+    ballBallFrictionA = 0.009951,
+    ballBallFrictionB = 0.108,
     ballBallFrictionC = 1.088,
     cushionRestitution = 0.8,
     cushionFriction = 0.2,
@@ -227,7 +227,7 @@ export class BilliardPhysicsManager {
     this.slidingFriction = slidingFriction;
     this.rollingFriction = rollingFriction;
     this.spinningFriction = spinningFriction;
-    this.spinDecay = spinDecay ?? spinningFriction;
+    this.spinDecay = spinDecay ?? 0.02;
     this.ballRestitution = ballRestitution;
     this.ballFriction = ballFriction;
     this.ballBallFrictionA = ballBallFrictionA;
@@ -502,8 +502,8 @@ export class BilliardPhysicsManager {
       ball.state = BallState.Rolling;
     }
 
-    if (planarSpeed(ball.velocity) < this.stopVelocityThreshold * 0.35
-      && newSlip < this.stopVelocityThreshold * 0.5) {
+    if (planarSpeed(ball.velocity) < this.stopVelocityThreshold
+      && newSlip < this.stopVelocityThreshold) {
       zeroBallMotion(ball);
     }
   }
@@ -512,7 +512,7 @@ export class BilliardPhysicsManager {
     const planar = this._scratchA.set(ball.velocity.x, 0, ball.velocity.z);
     const speed = planar.length();
 
-    if (speed < this.stopVelocityThreshold * 0.5
+    if (speed < this.stopVelocityThreshold * 1.2
       && Math.abs(ball.angularVelocity.y) < this.stopAngularThreshold
       && Math.hypot(ball.angularVelocity.x, ball.angularVelocity.z) < this.stopAngularThreshold) {
       zeroBallMotion(ball);
@@ -778,18 +778,16 @@ export class BilliardPhysicsManager {
     const angularXZ = Math.hypot(ball.angularVelocity.x, ball.angularVelocity.z);
     const slip = getBottomSlipVector(ball, this._scratchA).length();
 
-    if (
-      planar < this.stopVelocityThreshold
+    if (planar < this.stopVelocityThreshold
       && spinY < this.stopAngularThreshold
       && angularXZ < this.stopAngularThreshold
-      && slip < this.slipToRollThreshold
-    ) {
+      && slip < this.slipToRollThreshold) {
       zeroBallMotion(ball);
       return;
     }
 
     if (
-      planar < this.stopVelocityThreshold * 0.5
+      planar < this.stopVelocityThreshold * 0.75
       && angularXZ < this.stopAngularThreshold * 1.5
       && spinY >= this.stopAngularThreshold
     ) {

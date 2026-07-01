@@ -154,7 +154,7 @@ const cueHeadGap = 0.16;
 const cuePullbackDistance = 0.48;
 const cueStrikeDuration = 0.16;
 const cueStrikeHitTime = 0.9;
-const cueTipOffsetLimit = 0.45;
+const cueTipOffsetLimit = 1;
 const cueStickStretch = 5.2;
 const cueCameraBackDistance = 2.35;
 const cueCameraHeight = 0.64;
@@ -175,11 +175,11 @@ const physicsManager = new BilliardPhysicsManager({
   slidingFriction: 0.2,
   rollingFriction: 0.015,
   spinningFriction: 0.05,
-  spinDecay: 0.05,
-  ballRestitution: 0.98,
-  ballFriction: 0.01,
-  ballBallFrictionA: 0.006,
-  ballBallFrictionB: 0.07,
+  spinDecay: 0.02,
+  ballRestitution: 0.95,
+  ballFriction: 0.08,
+  ballBallFrictionA: 0.009951,
+  ballBallFrictionB: 0.108,
   ballBallFrictionC: 1.088,
   cushionRestitution: 0.8,
   cushionFriction: 0.2,
@@ -249,18 +249,15 @@ const state = {
   canvasGestureMoved: false
 };
 
+powerValue.textContent = `${state.power.toFixed(2)} m/s`;
+
 window.__gameState = state;
 
 const tmpVec2 = new THREE.Vector2();
-const tmpVec3 = new THREE.Vector3();
-const cushionMinX = -table.playWidth / 2 + ballRadius;
-const cushionMaxX = table.playWidth / 2 - ballRadius;
-const cushionMinZ = -table.playHeight / 2 + ballRadius;
-const cushionMaxZ = table.playHeight / 2 - ballRadius;
 
 powerSlider.addEventListener("input", () => {
   state.power = Number(powerSlider.value);
-  powerValue.textContent = `${Math.round(state.power * 100)}%`;
+  powerValue.textContent = `${state.power.toFixed(2)} m/s`;
 });
 
 resetButton.addEventListener("click", resetBalls);
@@ -942,7 +939,7 @@ function strikeCueBall(forward) {
   }
 
   const cueBall = balls[0];
-  const speed = THREE.MathUtils.clamp(state.power, 0.12, 1) * (160 * ballRadius);
+  const speed = THREE.MathUtils.clamp(state.power, 0.25, 6);
   cueBall.applyShot(state.aimDirection, speed, getCueTipOffset(), state.cueLift);
 }
 
@@ -955,86 +952,6 @@ function getCueTipOffset() {
 
 function updatePhysics(dt) {
   physicsManager.step(dt);
-}
-
-function handleCushions(ball) {
-  if (ball.position.x <= cushionMinX) {
-    ball.position.x = cushionMinX + 0.0004;
-    if (ball.velocity.x < 0) {
-      bounceBall(ball, new THREE.Vector3(1, 0, 0));
-    }
-  } else if (ball.position.x >= cushionMaxX) {
-    ball.position.x = cushionMaxX - 0.0004;
-    if (ball.velocity.x > 0) {
-      bounceBall(ball, new THREE.Vector3(-1, 0, 0));
-    }
-  }
-
-  if (ball.position.z <= cushionMinZ) {
-    ball.position.z = cushionMinZ + 0.0004;
-    if (ball.velocity.z < 0) {
-      bounceBall(ball, new THREE.Vector3(0, 0, 1));
-    }
-  } else if (ball.position.z >= cushionMaxZ) {
-    ball.position.z = cushionMaxZ - 0.0004;
-    if (ball.velocity.z > 0) {
-      bounceBall(ball, new THREE.Vector3(0, 0, -1));
-    }
-  }
-}
-
-function bounceBall(ball, normal) {
-  const vn = normal.clone().multiplyScalar(ball.velocity.dot(normal));
-  const vt = ball.velocity.clone().sub(vn);
-  const spinKick = new THREE.Vector3(-normal.z, 0, normal.x).multiplyScalar(ball.spin.y * physics.sideSpinCushionScale);
-
-  ball.velocity.copy(
-    vt.multiplyScalar(physics.tangentialBounce)
-      .sub(vn.multiplyScalar(physics.restitution))
-      .add(spinKick)
-  );
-
-  ball.spin.y *= 0.78;
-  ball.spin.x *= 0.92;
-  ball.spin.z *= 0.92;
-}
-
-function resolveBallCollisions() {
-  for (let i = 0; i < balls.length; i += 1) {
-    for (let j = i + 1; j < balls.length; j += 1) {
-      const a = balls[i];
-      const b = balls[j];
-      tmpVec3.copy(b.position).sub(a.position);
-      const distance = tmpVec3.length();
-      const minDistance = ballRadius * 2;
-
-      if (distance === 0 || distance >= minDistance) {
-        continue;
-      }
-
-      const normal = tmpVec3.normalize();
-      const overlap = minDistance - distance;
-      a.position.addScaledVector(normal, -overlap * 0.5);
-      b.position.addScaledVector(normal, overlap * 0.5);
-
-      const relative = a.velocity.clone().sub(b.velocity);
-      const separating = relative.dot(normal);
-      if (separating > 0) {
-        continue;
-      }
-
-      const impulse = -separating;
-      a.velocity.addScaledVector(normal, -impulse);
-      b.velocity.addScaledVector(normal, impulse);
-
-      const tangent = new THREE.Vector3(-normal.z, 0, normal.x);
-      const englishTransfer = (a.spin.y - b.spin.y) * 0.06;
-      a.velocity.addScaledVector(tangent, -englishTransfer);
-      b.velocity.addScaledVector(tangent, englishTransfer);
-      a.spin.y *= 0.92;
-      b.spin.y *= 0.92;
-    }
-  }
 }
 
 function areBallsMoving() {
