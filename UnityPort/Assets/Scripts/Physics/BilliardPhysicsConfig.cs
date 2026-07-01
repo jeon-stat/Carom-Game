@@ -51,7 +51,7 @@ namespace CaromGame.Physics
 
         [Header("Cue")]
         [Min(0f)] public float cueImpulseScale = 1f;
-        [Min(0f)] public float cueSpinScale = 1f;
+        [Min(0f)] public float cueSpinScale = 0.55f;
         [Min(0f)] public float cueElevationLiftScale = 0.18f;
 
         [Header("Debug")]

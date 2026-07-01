@@ -214,7 +214,7 @@ namespace CaromGame.Physics
                     PocketCaptureSpeed = 0.08f,
                     PocketPositions = Array.Empty<Vector3>(),
                     CueImpulseScale = 1f,
-                    CueSpinScale = 1f,
+                    CueSpinScale = 0.55f,
                     CueElevationLiftScale = 0.18f,
                     TrajectoryPreviewSeconds = 1.75f,
                     TrajectoryPreviewSamples = 24,

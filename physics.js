@@ -217,7 +217,7 @@ export class BilliardPhysicsManager {
     pocketCaptureSpeed = 0.08,
     pocketPositions = [],
     cueImpulseScale = 1,
-    cueSpinScale = 1,
+    cueSpinScale = 0.55,
     cueElevationLiftScale = 0.18,
     debugMode = false
   } = {}) {
@@ -355,10 +355,7 @@ export class BilliardPhysicsManager {
 
     ball.velocity.set(0, 0, 0);
     ball.angularVelocity.set(0, 0, 0);
-    ball.applyImpulse(linearImpulse);
-    const angularImpulse = contactOffset.clone().cross(linearImpulse).multiplyScalar(ball.inverseInertia);
-    angularImpulse.y *= -1;
-    ball.angularVelocity.add(angularImpulse);
+    ball.applyImpulseAtPoint(linearImpulse, contactOffset);
     ball.state = BallState.Sliding;
     ball.setPocketed(false);
     ball.syncTransform();

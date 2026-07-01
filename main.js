@@ -154,7 +154,7 @@ const cueHeadGap = 0.16;
 const cuePullbackDistance = 0.48;
 const cueStrikeDuration = 0.16;
 const cueStrikeHitTime = 0.9;
-const cueTipOffsetLimit = 0.35;
+const cueTipOffsetLimit = 0.3;
 const cueStickStretch = 5.2;
 const cueCameraBackDistance = 2.35;
 const cueCameraHeight = 0.64;
@@ -198,7 +198,7 @@ const physicsManager = new BilliardPhysicsManager({
   pocketCaptureSpeed: 0.08,
   pocketPositions: [],
   cueImpulseScale: 1,
-  cueSpinScale: 1,
+  cueSpinScale: 0.55,
   cueElevationLiftScale: 0.18,
   debugMode: false
 });
@@ -945,7 +945,7 @@ function strikeCueBall(forward) {
 
 function getCueTipOffset() {
   return new THREE.Vector2(
-    THREE.MathUtils.clamp(state.spin.x, -1, 1) * cueTipOffsetLimit,
+    -THREE.MathUtils.clamp(state.spin.x, -1, 1) * cueTipOffsetLimit,
     THREE.MathUtils.clamp(state.spin.y, -1, 1) * cueTipOffsetLimit
   );
 }

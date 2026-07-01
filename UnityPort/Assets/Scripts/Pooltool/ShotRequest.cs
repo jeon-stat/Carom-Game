@@ -34,7 +34,7 @@ namespace CaromGame.Pooltool
         public Vector2 tipOffset = Vector2.zero;
         public float elevation = 0f;
         public float cueImpulseScale = 1f;
-        public float cueSpinScale = 1f;
+        public float cueSpinScale = 0.55f;
         public float cueElevationLiftScale = 0.18f;
     }
 
