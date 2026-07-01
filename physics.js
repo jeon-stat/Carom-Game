@@ -699,27 +699,24 @@ export class BilliardPhysicsManager {
           const ra = this._scratchD.copy(normal).multiplyScalar(a.radius);
           const rb = this._scratchE.copy(normal).multiplyScalar(-b.radius);
           const vaContact = this._scratchF.copy(a.velocity)
-            .add(this._scratchA.copy(a.angularVelocity).cross(ra));
+            .add(this._scratchC.copy(a.angularVelocity).cross(ra));
           const vbContact = this._scratchC.copy(b.velocity)
-            .add(this._scratchB.copy(b.angularVelocity).cross(rb));
+            .add(this._scratchA.copy(b.angularVelocity).cross(rb));
           const relative = vbContact.sub(vaContact);
           const vn = relative.dot(normal);
-          const centerRelative = this._scratchF.copy(b.velocity).sub(a.velocity);
-          const centerVn = centerRelative.dot(normal);
-          const approachSpeed = Math.min(vn, centerVn);
 
-          if (approachSpeed >= 0) {
+          if (vn >= 0) {
             continue;
           }
 
-          const tangentVelocity = this._scratchA.copy(relative).sub(this._scratchB.copy(normal).multiplyScalar(vn));
+          const tangentVelocity = this._scratchB.copy(relative).sub(this._scratchD.copy(normal).multiplyScalar(vn));
           const tangentSpeed = tangentVelocity.length();
           const tangent = tangentSpeed > EPSILON
             ? tangentVelocity.multiplyScalar(1 / tangentSpeed)
-            : this._scratchB.set(-normal.z, 0, normal.x);
+            : this._scratchD.set(-normal.z, 0, normal.x);
 
           const invMassSum = a.inverseMass + b.inverseMass;
-          const normalImpulseMag = -(1 + this.ballRestitution) * approachSpeed / Math.max(invMassSum, EPSILON);
+          const normalImpulseMag = -(1 + this.ballRestitution) * vn / Math.max(invMassSum, EPSILON);
 
           const effectiveTangentInvMass = invMassSum
             + (a.radius * a.radius * a.inverseInertia)
