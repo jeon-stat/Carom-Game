@@ -1,0 +1,6 @@
+pooltool-billiards==0.6.0
+panda3d==1.11.0.dev3702
+numpy>=1.26
+numpy-quaternion>=2024.0.12
+scipy>=1.12
+
