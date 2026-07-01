@@ -154,7 +154,7 @@ const cueHeadGap = 0.16;
 const cuePullbackDistance = 0.48;
 const cueStrikeDuration = 0.16;
 const cueStrikeHitTime = 0.9;
-const cueTipOffsetLimit = 0.45;
+const cueTipOffsetLimit = 0.35;
 const cueStickStretch = 5.2;
 const cueCameraBackDistance = 2.35;
 const cueCameraHeight = 0.64;
@@ -175,7 +175,7 @@ const physicsManager = new BilliardPhysicsManager({
   slidingFriction: 0.2,
   rollingFriction: 0.015,
   spinningFriction: 0.05,
-  spinDecay: 0.02,
+  spinDecay: 0.04,
   ballRestitution: 0.95,
   ballBallFrictionFloor: 0.05,
   ballBallFrictionA: 0.009951,
@@ -854,7 +854,7 @@ function updateCueAndCamera(dt) {
     const baseRight = new THREE.Vector3(baseForward.z, 0, -baseForward.x).normalize();
 
     const contactOffset = baseRight.clone().multiplyScalar(cueTipOffset.x * ballRadius)
-      .add(up.clone().multiplyScalar(-cueTipOffset.y * ballRadius));
+      .add(up.clone().multiplyScalar(cueTipOffset.y * ballRadius));
 
     contactPoint = cueBall.position.clone()
       .add(baseForward.clone().multiplyScalar(-ballRadius - cueHeadGap))

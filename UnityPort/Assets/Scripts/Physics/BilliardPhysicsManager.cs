@@ -191,7 +191,7 @@ namespace CaromGame.Physics
                     Gravity = 9.81f,
                     SlidingFriction = 0.2f,
                     RollingFriction = 0.015f,
-                    SpinDecay = 0.02f,
+                    SpinDecay = 0.04f,
                     BallRestitution = 0.95f,
                     BallBallFrictionFloor = 0.08f,
                     BallBallFrictionA = 0.009951f,

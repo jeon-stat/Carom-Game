@@ -194,7 +194,7 @@ export class BilliardPhysicsManager {
     slidingFriction = 0.2,
     rollingFriction = 0.015,
     spinningFriction = 0.05,
-    spinDecay = 0.02,
+    spinDecay = 0.04,
     ballRestitution = 0.95,
     ballBallFrictionFloor = 0.05,
     ballBallFrictionA = 0.009951,
@@ -355,7 +355,10 @@ export class BilliardPhysicsManager {
 
     ball.velocity.set(0, 0, 0);
     ball.angularVelocity.set(0, 0, 0);
-    ball.applyImpulseAtPoint(linearImpulse, contactOffset);
+    ball.applyImpulse(linearImpulse);
+    const angularImpulse = contactOffset.clone().cross(linearImpulse).multiplyScalar(ball.inverseInertia);
+    angularImpulse.y *= -1;
+    ball.angularVelocity.add(angularImpulse);
     ball.state = BallState.Sliding;
     ball.setPocketed(false);
     ball.syncTransform();

@@ -14,7 +14,7 @@ namespace CaromGame.Physics
         [Header("Motion")]
         [Min(0f)] public float slidingFriction = 0.2f;
         [Min(0f)] public float rollingFriction = 0.015f;
-        [Min(0f)] public float spinDecay = 0.02f;
+        [Min(0f)] public float spinDecay = 0.04f;
 
         [Header("Ball-Ball")]
         [Range(0f, 1f)] public float ballRestitution = 0.95f;
