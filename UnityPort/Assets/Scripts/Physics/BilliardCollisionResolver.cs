@@ -67,7 +67,34 @@ namespace CaromGame.Physics
                 + b.InverseInertia * Vector3.Cross(rb, tangentDir).sqrMagnitude;
             float tangentImpulseMag = Mathf.Min(tangentSpeed / Mathf.Max(tangentDenom, Epsilon), tangentImpulseLimit);
 
-            Vector3 impulse = (normal * normalImpulseMag) - (tangentDir * tangentImpulseMag);
+            Vector3 baseImpulse = normal * normalImpulseMag;
+            Vector3 tangentImpulse = -tangentDir * tangentImpulseMag;
+            float preEnergy = GetBallEnergy(a) + GetBallEnergy(b);
+
+            float tangentScale = 1f;
+            if (tangentImpulseMag > Epsilon)
+            {
+                float low = 0f;
+                float high = 1f;
+                for (int iteration = 0; iteration < 7; iteration++)
+                {
+                    float mid = (low + high) * 0.5f;
+                    Vector3 candidateImpulse = baseImpulse + (tangentImpulse * mid);
+                    float candidateEnergy = EstimatePairEnergyAfterImpulse(a, b, ra, rb, candidateImpulse);
+                    if (candidateEnergy <= preEnergy + 1e-10f)
+                    {
+                        low = mid;
+                    }
+                    else
+                    {
+                        high = mid;
+                    }
+                }
+
+                tangentScale = low;
+            }
+
+            Vector3 impulse = baseImpulse + (tangentImpulse * tangentScale);
 
             a.ApplyImpulseAtPoint(-impulse, ra);
             b.ApplyImpulseAtPoint(impulse, rb);
@@ -175,12 +202,78 @@ namespace CaromGame.Physics
                 + ball.InverseInertia * Vector3.Cross(contactOffset, tangentDir).sqrMagnitude;
             float tangentialImpulseMag = Mathf.Min(tangentSpeed / Mathf.Max(tangentDenom, Epsilon), tangentialLimit);
 
-            Vector3 impulse = (normal * normalImpulseMag) - (tangentDir * tangentialImpulseMag);
+            Vector3 baseImpulse = normal * normalImpulseMag;
+            Vector3 tangentImpulse = -tangentDir * tangentialImpulseMag;
+            float preEnergy = GetBallEnergy(ball);
+
+            float tangentScale = 1f;
+            if (tangentialImpulseMag > Epsilon)
+            {
+                float low = 0f;
+                float high = 1f;
+                for (int iteration = 0; iteration < 7; iteration++)
+                {
+                    float mid = (low + high) * 0.5f;
+                    Vector3 candidateImpulse = baseImpulse + (tangentImpulse * mid);
+                    float candidateEnergy = EstimateBallEnergyAfterImpulse(ball, contactOffset, candidateImpulse);
+                    if (candidateEnergy <= preEnergy + 1e-10f)
+                    {
+                        low = mid;
+                    }
+                    else
+                    {
+                        high = mid;
+                    }
+                }
+
+                tangentScale = low;
+            }
+
+            Vector3 impulse = baseImpulse + (tangentImpulse * tangentScale);
             ball.ApplyImpulseAtPoint(impulse, contactOffset);
             ball.State = BallMotionState.Sliding;
 
             AddDebugContact(debugContacts, ball.Position + contactOffset, normal, impulse, BallContactType.Cushion, Color.green);
             return true;
+        }
+
+        private static float GetBallEnergy(BilliardBallPhysics ball)
+        {
+            return GetBallEnergy(ball, ball.Velocity, ball.AngularVelocity);
+        }
+
+        private static float GetBallEnergy(BilliardBallPhysics ball, Vector3 velocity, Vector3 angularVelocity)
+        {
+            Vector3 v = velocity;
+            Vector3 w = angularVelocity;
+            float linearEnergy = 0.5f * ball.Mass * v.sqrMagnitude;
+            float inertia = (2f / 5f) * ball.Mass * ball.Radius * ball.Radius;
+            float angularEnergy = 0.5f * inertia * w.sqrMagnitude;
+            return linearEnergy + angularEnergy;
+        }
+
+        private static float EstimatePairEnergyAfterImpulse(
+            BilliardBallPhysics a,
+            BilliardBallPhysics b,
+            Vector3 ra,
+            Vector3 rb,
+            Vector3 impulse)
+        {
+            Vector3 aLinear = a.Velocity - (impulse * a.InverseMass);
+            Vector3 bLinear = b.Velocity + (impulse * b.InverseMass);
+            Vector3 aAngular = a.AngularVelocity + Vector3.Cross(ra, -impulse) * a.InverseInertia;
+            Vector3 bAngular = b.AngularVelocity + Vector3.Cross(rb, impulse) * b.InverseInertia;
+            return GetBallEnergy(a, aLinear, aAngular) + GetBallEnergy(b, bLinear, bAngular);
+        }
+
+        private static float EstimateBallEnergyAfterImpulse(
+            BilliardBallPhysics ball,
+            Vector3 contactOffset,
+            Vector3 impulse)
+        {
+            Vector3 linear = ball.Velocity + (impulse * ball.InverseMass);
+            Vector3 angular = ball.AngularVelocity + Vector3.Cross(contactOffset, impulse) * ball.InverseInertia;
+            return GetBallEnergy(ball, linear, angular);
         }
 
         private static void AddDebugContact(

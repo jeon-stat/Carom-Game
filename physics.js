@@ -196,10 +196,10 @@ export class BilliardPhysicsManager {
     spinningFriction = 0.05,
     spinDecay = 0.04,
     ballRestitution = 0.95,
-    ballBallFrictionFloor = 0.05,
-    ballBallFrictionA = 0.009951,
-    ballBallFrictionB = 0.108,
-    ballBallFrictionC = 1.088,
+    ballBallFrictionFloor = 0.015,
+    ballBallFrictionA = 0.003,
+    ballBallFrictionB = 0.03,
+    ballBallFrictionC = 1.25,
     cushionRestitution = 0.8,
     cushionFriction = 0.2,
     stopVelocityThreshold = 0.01,
@@ -284,6 +284,13 @@ export class BilliardPhysicsManager {
     const inertia = (2 / 5) * ball.mass * ball.radius * ball.radius;
     const angularEnergy = 0.5 * inertia * angularVelocity.lengthSq();
     return linearEnergy + angularEnergy;
+  }
+
+  estimateBallEnergyAfterImpulse(ball, contactOffset, impulse) {
+    const linear = this._scratchG.copy(ball.velocity).addScaledVector(impulse, ball.inverseMass);
+    const angular = this._scratchH.copy(ball.angularVelocity)
+      .add(this._scratchA.copy(contactOffset).cross(impulse).multiplyScalar(ball.inverseInertia));
+    return this.getBallEnergy(ball, linear, angular);
   }
 
   estimatePairEnergyAfterImpulse(a, b, ra, rb, impulse) {
@@ -651,8 +658,29 @@ export class BilliardPhysicsManager {
       tangentialLimit
     );
 
-    const impulse = this._scratchE.copy(n).multiplyScalar(normalImpulseMag)
-      .addScaledVector(t, tangentialImpulseMag);
+    const baseImpulse = this._scratchE.copy(n).multiplyScalar(normalImpulseMag);
+    const tangentImpulse = this._scratchF.copy(t).multiplyScalar(tangentialImpulseMag);
+    const preEnergy = this.getBallEnergy(ball);
+
+    let tangentScale = 1;
+    if (Math.abs(tangentialImpulseMag) > EPSILON) {
+      let low = 0;
+      let high = 1;
+      for (let iteration = 0; iteration < 7; iteration += 1) {
+        const mid = (low + high) * 0.5;
+        const candidateImpulse = new THREE.Vector3().copy(baseImpulse).addScaledVector(tangentImpulse, mid);
+        const candidateEnergy = this.estimateBallEnergyAfterImpulse(ball, contactOffset, candidateImpulse);
+        if (candidateEnergy <= preEnergy + 1e-10) {
+          low = mid;
+        } else {
+          high = mid;
+        }
+      }
+
+      tangentScale = low;
+    }
+
+    const impulse = this._scratchE.copy(baseImpulse).addScaledVector(tangentImpulse, tangentScale);
 
     ball.applyImpulseAtPoint(impulse, contactOffset);
     ball.state = BallState.Sliding;
